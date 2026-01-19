@@ -1,0 +1,25 @@
+#ifndef _MESH_SLICER_H_
+#define _MESH_SLICER_H_
+
+#include <glm/glm.hpp>
+#include <vector>
+#include <string>
+
+struct Contour {
+	bool external; // not used
+	bool clockwise;// not used
+	std::vector<glm::vec3> points;
+
+	void clear() { points.clear(); }
+
+	unsigned int size() { return points.size(); }
+
+};
+
+
+void LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep=0.1f);
+
+
+extern std::vector<std::vector<glm::vec3>> mergeLineSegments(const std::vector<std::vector<glm::vec3>>& linesegments);
+
+#endif
