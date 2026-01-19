@@ -915,7 +915,7 @@ std::vector<glm::vec3> transformPointsBasisBack(const std::vector<glm::vec3>& po
 
 #pragma endregion
 
-std::map<int, std::vector<glm::vec3>> LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep)
+std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep)
 {
 	//1 load model with assimp -> std::vector<glm::vec3> tri_pts 
 	std::vector<glm::vec3> tri_pts;
@@ -925,7 +925,7 @@ std::map<int, std::vector<glm::vec3>> LoadModelAndMakeSlices(const std::string& 
 	const aiScene* scene = importer.ReadFile(fullpath, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
 	if (!scene || !scene->HasMeshes()) {
 		std::cerr << "Error loading model: " << importer.GetErrorString() << std::endl;
-		return std::map<int, std::vector<glm::vec3>>();
+		return std::map<int, std::vector<std::vector<glm::vec3>> >();
 	}
 	for (unsigned int m = 0; m < scene->mNumMeshes; ++m) {
 		aiMesh* mesh = scene->mMeshes[m];
@@ -971,23 +971,26 @@ std::map<int, std::vector<glm::vec3>> LoadModelAndMakeSlices(const std::string& 
 
 	auto slice_contours = polygons;
 	
-	std::map<int, std::vector<glm::vec3>> positions_all;
+	std::map<int, std::vector<std::vector<glm::vec3>>> positions_all;
 	for (int i = 0; i < slice_contours.size(); i++)
 	{
 		float real_height = i * heightstep;
 		auto& cur_slice = slice_contours[i];
-		std::vector<glm::vec3> positions;
+		std::vector < std::vector<glm::vec3>> contours;
 		for (auto& contour : cur_slice)
 		{
+			std::vector<glm::vec3> positions;
 			for (int j = 0; j < contour.size() - 1; j++)
 			{
 				positions.emplace_back(contour.points[j]);
 				positions.emplace_back(contour.points[(j + 1) % contour.size()]);
 			}
+			positions = transformPointsBasisBack(positions, normal);
+
+			contours.push_back(positions);
 		}
 
-		positions = transformPointsBasisBack(positions, normal);
-		positions_all[i] = positions;
+		positions_all[i] = contours;
 	}
 
 	return positions_all;

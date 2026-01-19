@@ -49,6 +49,21 @@ FetchContent_Declare(
 set(GLAD_API gl=3.3 CACHE STRING "" FORCE)
 
 FetchContent_MakeAvailable(glad)
+FetchContent_Declare(
+  canvas_ity
+  GIT_REPOSITORY https://github.com/a-e-k/canvas_ity.git
+  GIT_TAG main
+)
+
+FetchContent_MakeAvailable(canvas_ity)
+
+FetchContent_Declare(
+  stb
+  GIT_REPOSITORY https://github.com/nothings/stb.git
+  GIT_TAG master
+)
+
+FetchContent_MakeAvailable(stb)
 
 file(GLOB src_files *.cpp)
 
@@ -57,4 +72,4 @@ target_compile_definitions(${projname} PUBLIC APP_ROOT_PATH=\"${CMAKE_CURRENT_SO
 
 target_link_libraries(${projname} assimp::assimp glfw glad)
 
-target_include_directories(${projname} PRIVATE D:/gitclones/Hazel/Hazel/vendor/glm)
+target_include_directories(${projname} PRIVATE D:/gitclones/Hazel/Hazel/vendor/glm ${canvas_ity_SOURCE_DIR} ${stb_SOURCE_DIR})

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <map>
 #include <vector>
+#include <limits>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -11,6 +12,8 @@
 
 #include "meshslicer.h"
 #include "FPSCamera.h"
+#include "Pipe.h"
+
 
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void mouse_callback(GLFWwindow* window, double xpos, double ypos);
@@ -53,6 +56,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
     camera.ProcessMouseScroll(yoffset);
 }
 
+
 int main()
 {
     // Initialize GLFW
@@ -93,19 +97,34 @@ int main()
     // Load model and make slices
     auto positions_all = LoadModelAndMakeSlices("Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj", glm::vec3(0,1,0), 0.1f);
 
+    // Draw and save canvas
+    Pipe pipe;
+    std::map<int,MDSContours> contours;
+    for(auto contour: positions_all)
+    {
+        auto mds_contour = computeMDSContours(contour.second);
+        contours.insert({contour.first, mds_contour});
+    }
+    pipe.drawAndSaveCanvas(contours,40);
+    system("sliced_model.png");
+    return 0;
     // Prepare vertex data
     std::vector<float> vertices;
     for (const auto& pair : positions_all)
     {
-        const auto& positions = pair.second;
-        for (size_t i = 0; i < positions.size(); i += 2)
+        const auto& contours = pair.second;
+        for (auto contour : contours)
         {
-            vertices.push_back(positions[i].x);
-            vertices.push_back(positions[i].y);
-            vertices.push_back(positions[i].z);
-            vertices.push_back(positions[i+1].x);
-            vertices.push_back(positions[i+1].y);
-            vertices.push_back(positions[i+1].z);
+            auto& positions = contour;
+            for (size_t i = 0; i < positions.size(); i += 2)
+            {
+                vertices.push_back(positions[i].x);
+                vertices.push_back(positions[i].y);
+                vertices.push_back(positions[i].z);
+                vertices.push_back(positions[i + 1].x);
+                vertices.push_back(positions[i + 1].y);
+                vertices.push_back(positions[i + 1].z);
+            }
         }
     }
 
