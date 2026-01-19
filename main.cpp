@@ -17,7 +17,7 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos);
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
 
 // Camera
-FPSCamera camera(glm::vec3(0.0f, 0.0f, 3.0f));
+FPSCamera camera(glm::vec3(0.0f, 0.0f, 30.0f));
 float lastX = 400, lastY = 300;
 bool firstMouse = true;
 
