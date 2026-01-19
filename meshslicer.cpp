@@ -979,11 +979,18 @@ std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const
 		std::vector < std::vector<glm::vec3>> contours;
 		for (auto& contour : cur_slice)
 		{
+			if (contour.clockwise)//default is counter-clockwise,wont enter this if
+			{
+				//reverse contour points
+				std::reverse(contour.points.begin(), contour.points.end());
+				contour.clockwise = false;
+			}
+
 			std::vector<glm::vec3> positions;
-			for (int j = 0; j < contour.size() - 1; j++)
+			for (int j = 0; j < contour.size(); j++)
 			{
 				positions.emplace_back(contour.points[j]);
-				positions.emplace_back(contour.points[(j + 1) % contour.size()]);
+				//positions.emplace_back(contour.points[(j + 1) % contour.size()]);
 			}
 			positions = transformPointsBasisBack(positions, normal);
 

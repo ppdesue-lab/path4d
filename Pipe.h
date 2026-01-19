@@ -13,7 +13,7 @@ struct MDS
     float start;
     float end;
 
-    MDS(float s, float e)
+    MDS(float s=0, float e=0)
     {
         start = s;
         end = e;
@@ -36,20 +36,35 @@ struct MDSContour
 {
 	std::vector<glm::vec3> points;
     std::vector<glm::vec3> normals;
-    std::vector<MDS> MDSs;
+    std::vector<std::vector<MDS>> MDSs;
 
     void fromPoints(const std::vector<glm::vec3>& pts)
     {
-        points = pts;
-        for(int i=0;i<pts.size();i++)
+        //the first point == the last point,need remove it
+        
+        for (int i = 0; i < pts.size()-1; i++)
         {
-			auto pn1 = pts[(i - 1 + pts.size()) % pts.size()];
-            auto p0 = pts[i];
-            auto p1 = pts[(i+1)%pts.size()];
-            auto dir = glm::normalize(-p1 + p0);
-			auto dir2 = glm::normalize(p0 - pn1);
-            auto normal = glm::normalize(dir + dir2);//y is up
-            normals.emplace_back(normal);
+            if(points.size())
+                if(points[points.size() - 1] == pts[i])
+					continue;
+
+			points.emplace_back(pts[i]);
+        }
+        if(pts[pts.size()-1] != pts[0])
+			points.emplace_back(pts[pts.size() - 1]);
+
+        int count = (int)points.size();
+        for(int i=0;i< count;i++)
+        {
+			auto dir = glm::normalize(points[(i + 1) % count] - points[i]);
+			auto normal = glm::normalize(glm::vec3(-dir.z, 0, dir.x));
+
+
+            auto dir2 = glm::normalize(-points[(i - 1+ count) % count] + points[i]);
+            auto normal2 = glm::normalize(glm::vec3(-dir.z, 0, dir.x));
+
+			auto avg_normal = glm::normalize(normal + normal2);
+            normals.emplace_back(avg_normal);
 		}
 	}
 };
@@ -73,7 +88,7 @@ public:
 
 
     //construct ball end & cylinder height
-    Tool(float r,float height)
+    Tool(float r=1.0f,float height=10.0f)
     {
         radius = r;
         this->height = height;
@@ -89,12 +104,18 @@ public:
         this->LenDir = glm::normalize(dir) * height;
     }
 
+    void SetRotationAngle(float angleRadian)
+    {
+        glm::vec3 dir(cosf(angleRadian), 0, sinf(angleRadian));
+        this->LenDir = dir * height;
+    }
+
     glm::vec3 GetTopPosition()
     {
         return Position + LenDir;
 	}
 
-    bool isPointReachable(const glm::vec3& point)
+    bool isPointReachable(const glm::vec3& point) const
     {
         //considering ball end mill only
         auto to_start = glm::vec2(point.x - Position.x, point.z - Position.z);
@@ -115,12 +136,23 @@ public:
     } 
 
 };
+
 class Pipe
 {
 public:
     Pipe() {};
 
+
+
+    void initTool(float radius, float height)
+    {
+		tool = Tool(radius, height);
+	}
+
     void drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, int idx = -1);
 
-    void CalMDSForEachSlice(const std::map<int, MDSContours>& positions_all,float radius);
+    void CalMDSForEachSlice(std::map<int, MDSContours>& positions_all);
+
+
+    Tool tool;
 };

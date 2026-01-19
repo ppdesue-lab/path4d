@@ -59,6 +59,22 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 
 int main()
 {
+    // Load model and make slices
+    auto positions_all = LoadModelAndMakeSlices("Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj", glm::vec3(0, 1, 0), 0.1f);
+
+    // Draw and save canvas
+    Pipe pipe;
+    std::map<int, MDSContours> contours;
+    for (auto contour : positions_all)
+    {
+        auto mds_contour = computeMDSContours(contour.second);
+        contours.insert({ contour.first, mds_contour });
+    }
+    //pipe.CalMDSForEachSlice(contours);
+    pipe.drawAndSaveCanvas(contours, 40);
+    system("sliced_model.png");
+    return 0;
+
     // Initialize GLFW
     if (!glfwInit())
     {
@@ -94,20 +110,7 @@ int main()
         return -1;
     }
 
-    // Load model and make slices
-    auto positions_all = LoadModelAndMakeSlices("Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj", glm::vec3(0,1,0), 0.1f);
-
-    // Draw and save canvas
-    Pipe pipe;
-    std::map<int,MDSContours> contours;
-    for(auto contour: positions_all)
-    {
-        auto mds_contour = computeMDSContours(contour.second);
-        contours.insert({contour.first, mds_contour});
-    }
-    pipe.drawAndSaveCanvas(contours,40);
-    system("sliced_model.png");
-    return 0;
+    
     // Prepare vertex data
     std::vector<float> vertices;
     for (const auto& pair : positions_all)
@@ -116,14 +119,15 @@ int main()
         for (auto contour : contours)
         {
             auto& positions = contour;
-            for (size_t i = 0; i < positions.size(); i += 2)
+            uint32_t count = positions.size();
+            for (size_t i = 0; i < count; i ++)
             {
                 vertices.push_back(positions[i].x);
                 vertices.push_back(positions[i].y);
                 vertices.push_back(positions[i].z);
-                vertices.push_back(positions[i + 1].x);
-                vertices.push_back(positions[i + 1].y);
-                vertices.push_back(positions[i + 1].z);
+                vertices.push_back(positions[(i + 1)% count].x);
+                vertices.push_back(positions[(i + 1) % count].y);
+                vertices.push_back(positions[(i + 1) % count].z);
             }
         }
     }
