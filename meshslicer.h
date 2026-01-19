@@ -4,7 +4,7 @@
 #include <glm/glm.hpp>
 #include <vector>
 #include <string>
-
+#include <map>
 struct Contour {
 	bool external; // not used
 	bool clockwise;// not used
@@ -17,7 +17,7 @@ struct Contour {
 };
 
 
-void LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep=0.1f);
+std::map<int, std::vector<glm::vec3>> LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep=0.1f);
 
 
 extern std::vector<std::vector<glm::vec3>> mergeLineSegments(const std::vector<std::vector<glm::vec3>>& linesegments);

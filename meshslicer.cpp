@@ -915,7 +915,7 @@ std::vector<glm::vec3> transformPointsBasisBack(const std::vector<glm::vec3>& po
 
 #pragma endregion
 
-void LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep)
+std::map<int, std::vector<glm::vec3>> LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep)
 {
 	//1 load model with assimp -> std::vector<glm::vec3> tri_pts 
 	std::vector<glm::vec3> tri_pts;
@@ -925,7 +925,7 @@ void LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,
 	const aiScene* scene = importer.ReadFile(fullpath, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
 	if (!scene || !scene->HasMeshes()) {
 		std::cerr << "Error loading model: " << importer.GetErrorString() << std::endl;
-		return;
+		return std::map<int, std::vector<glm::vec3>>();
 	}
 	for (unsigned int m = 0; m < scene->mNumMeshes; ++m) {
 		aiMesh* mesh = scene->mMeshes[m];
@@ -959,10 +959,6 @@ void LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,
 	double eps = 0.004;
 	float delta = 0.0;
 	auto planes = compute_planes(tri_pts_box, heightstep, "false", eps, &delta);
-	for (auto plane : planes)
-	{
-		std::cout << "Plane:" << plane << std::endl;
-	}
 
 	int nplanes = planes.size();
 	std::vector<std::vector<Contour>> polygons(nplanes);
@@ -993,22 +989,6 @@ void LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,
 		positions = transformPointsBasisBack(positions, normal);
 		positions_all[i] = positions;
 	}
-	//for (auto contours : slice_contours)
-	//{
-	//	std::vector<glm::vec3> positions;
-	//	for (auto contour : contours)
-	//	{
-	//		for (int i = 0; i < contour.size() - 1; i++)
-	//		{
-	//			positions.emplace_back(contour.points[i]);
-	//			positions.emplace_back(contour.points[(i + 1) % contour.size()]);
-	//		}
-	//		positions = transformPointsBasisBack(positions, normal);
-	//	}
-	//	positions_all[positions[0].z] = positions;
-	//}
 
-	//3 output contours to gcode or mesh lines
-	int a = 0;
-
+	return positions_all;
 }
