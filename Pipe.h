@@ -84,7 +84,7 @@ public:
     float height = 10.0f;//mm
     //location
     glm::vec3 Position = glm::vec3(0,0,0);
-	glm::vec3 LenDir = glm::vec3(0, 0, 1);
+	glm::vec3 LenDir = glm::vec3(0, 0, 10);
 
 
     //construct ball end & cylinder height
@@ -92,11 +92,22 @@ public:
     {
         radius = r;
         this->height = height;
+        LenDir = glm::vec3(0, 0, height);
     }
 
     void SetPosition(const glm::vec3& pos)
     {
         Position = pos;
+	}
+
+    glm::vec3 GetDirection()
+    {
+		return glm::normalize(LenDir);
+    }
+
+    glm::vec3 GetPerpDirection()
+    {
+        return glm::normalize(glm::vec3(-LenDir.z, 0, LenDir.x));
 	}
 
     void SetRotation(const glm::vec3& dir)
@@ -143,7 +154,6 @@ public:
     Pipe() {};
 
 
-
     void initTool(float radius, float height)
     {
 		tool = Tool(radius, height);
@@ -154,5 +164,6 @@ public:
     void CalMDSForEachSlice(std::map<int, MDSContours>& positions_all);
 
 
+    int test_idx = 40;
     Tool tool;
 };

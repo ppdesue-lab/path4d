@@ -4,7 +4,9 @@
 #include "stb_image_write.h"
 
 #define CANVAS_ITY_IMPLEMENTATION
-#include "src/canvas_ity.hpp"
+#include <src/canvas_ity.hpp>
+
+#include "KDTree.hpp"
 
 #include <fstream>
 #include <time.h>
@@ -19,7 +21,7 @@ glm::vec3 randColor()
 
 void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, int idx)
 {
-
+    
     // Canvas size
     int width = 1000;
     int height = 1000;
@@ -105,14 +107,74 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                 context.set_color(canvas_ity::stroke_style, color.r, color.g, color.b, 1.f);
                 context.stroke();
             }
-            
-            
-
-
 
             contour_idx++;
         }
         layer_idx++;
+    }
+
+    //paint tool on canvas
+    {
+        Tool testtool(tool.radius, tool.height);
+        int layer_idx = 0;
+        for (const auto& pair : positions_all)
+        {
+            if (layer_idx != idx && idx != -1)
+            {
+                layer_idx++;
+                continue;
+            }
+            const auto& contours = pair.second;
+            for (const auto& contour : contours)
+            {
+                //for (const auto& pos : contour.points)
+                for(int i=0;i<contour.points.size();i++)
+                {
+                    auto pos = contour.points[i];
+                    testtool.Position = pos +contour.normals[i] * (tool.radius + 0.001f);
+                    testtool.SetRotation(contour.normals[i]);
+                    goto A;
+                }
+            }
+        }
+        A:
+        
+
+        float x1 = testtool.Position.x * scale + offsetX;
+        float y1 = testtool.Position.z * scale + offsetY;
+
+		float x2 = testtool.GetTopPosition().x * scale + offsetX;
+		float y2 = testtool.GetTopPosition().z * scale + offsetY;
+
+		float scaled_radius = testtool.radius * scale;
+
+        auto prepDistance = testtool.GetPerpDirection() * scaled_radius;
+
+        context.begin_path();
+        //context.move_to(x1, y1);
+        //context.line_to(x2, y2);
+
+        context.move_to(x1+prepDistance.x, y1 + prepDistance.z);
+        context.line_to(x2+prepDistance.x, y2 + prepDistance.z);
+
+
+        context.line_to(x2 - prepDistance.x, y2 - prepDistance.z);
+        context.line_to(x1 - prepDistance.x, y1 - prepDistance.z);
+        context.addFan(
+                    x1,
+                    y1,
+                    scaled_radius, // radius
+                    0.0f,
+                    2.0f * 3.14159265f,
+                    true
+                );
+
+
+
+        context.close_path();
+        auto color = randColor();
+        context.set_color(canvas_ity::fill_style, color.r, color.g, color.b, 0.5f);
+        context.fill();
     }
 
     // Get image data
@@ -128,21 +190,24 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
 
 void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 {
-    auto isAngleValid = [](const Tool& tool,const MDSContours& contours)-> bool
+    auto isAngleValid = [](const Tool& tool, const MDSContours& contours, const KDTree& kdtree) -> bool
     {
-        for (const auto& contour : contours)
-        {
-            for (const auto& pt : contour.points)
-            {
-                if (tool.isPointReachable(pt))
-                    return false;
-            }
+        // 使用KDTree找到最近的点
+        glm::vec2 nearest_pt = kdtree.nearest(tool.Position);
+        float dist_sq = glm::length(glm::vec2(tool.Position.x, tool.Position.z) - nearest_pt);
+        dist_sq *= dist_sq;
+        float threshold = tool.radius;
+        if (dist_sq < threshold * threshold) {
+            return false;
         }
-		return true;
-	};
+        //todo:check cylinder part
+        
+        return true;
+    };
 
-    auto calMDSForPoint = [&](const MDSContours& contours,Tool& testtool) -> std::vector<MDS>
+    auto calMDSForPoint = [&](const MDSContours& contours,Tool& testtool,const KDTree& kdtree) -> std::vector<MDS>
     {
+        
         //for each angle 0~360degree,every 5degree
 		const int sample_num = 72;
 		const int sample_step = 360 / sample_num;
@@ -153,7 +218,7 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
             float angleRad = glm::radians((float)angle*sample_step);
             testtool.SetRotationAngle(angleRad);
 
-            if (isAngleValid(tool, contours))
+            if (isAngleValid(testtool, contours, kdtree))
             {
 				validangle[angle] = 1;
             }
@@ -212,7 +277,19 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 
     for (auto& pair : positions_all)
     {
+        //for each slice
+#ifndef NDEBUG
+        if(pair.first != test_idx)
+            continue;//skip bottom layer
+#endif
         auto& contours = pair.second;
+        // 构建KDTree
+        KDTree kdtree;
+        std::vector<glm::vec3> points;
+        for (auto& contour : contours)
+            points.insert(points.end(), contour.points.begin(), contour.points.end());
+        kdtree.init(points);
+
         for (auto& contour : contours)
         {
             contour.MDSs.clear();
@@ -223,7 +300,7 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 				Tool testtool(tool.radius, tool.height);
 				testtool.Position = contour_pt + contour.normals[i] * (tool.radius + 0.01f);
 
-				auto mdsArray = calMDSForPoint(contours, testtool);
+				auto mdsArray = calMDSForPoint(contours, testtool, kdtree);
                 contour.MDSs.emplace_back(mdsArray);
             }
         }
