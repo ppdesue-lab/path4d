@@ -21,7 +21,7 @@ struct MDS
         end = e;
     }
 
-    float Range()
+    float Range() const
     {
         if(end < start)
             return (360 + end) - start;
@@ -129,6 +129,28 @@ struct MDS
         return std::nullopt; //no intersection
     }
 
+    std::optional<MDS> IntersectsRangeReturnSelected(const std::vector<MDS>& others) const
+    {
+        MDS max_intersection(0, 0);
+        MDS selectedMDS;
+        for (const auto& other : others)
+        {
+            auto intersection = IntersectsRange(other);
+            if (intersection)
+            {
+                if (intersection->Range() > max_intersection.Range())
+                {
+                    max_intersection = *intersection;
+                    selectedMDS = other;
+                }
+            }
+        }
+        if (max_intersection.Range() > 0)
+            return selectedMDS;
+        return std::nullopt; //no intersection
+    }
+
+
     float GetMidAngle() const
     {
         if (end >= start)
@@ -149,12 +171,21 @@ struct MDSSegment
 {
     int ID_Start;
     int ID_End;
+    bool isConnected = false; // for cross-contour connections
+    int otherContourID = -1; // for cross-contour, the ID of the other contour
+    int otherPointID = -1; // for cross-contour, the point ID in the other contour
+
+    bool operator == (const MDSSegment& other) const
+    {
+        return (ID_Start == other.ID_Start && ID_End == other.ID_End);
+	}
 };
 struct MDSContour
 {
 	std::vector<glm::vec3> points;
     std::vector<glm::vec3> normals;
     std::vector<std::vector<MDS>> MDSs;
+    std::vector<MDS> selectMDS;
 
 	std::vector<MDSSegment> MDSSegments;
 
@@ -192,7 +223,10 @@ struct MDSContour
     {
 		//search all MDS, connect mds point to segment if two mds has mds intersection
 		int contour_count = (int)points.size();
+        selectMDS.resize(contour_count);
+
         std::vector<char> visited(contour_count, 0);
+
 
         for (int i = 0; i < contour_count; i++)
         {
@@ -200,11 +234,17 @@ struct MDSContour
                 continue;
 
             //test each point's mds
+            int max_connect_points = 0;
             auto& pointMDSArray = MDSs[i];
+
+			std::vector<std::map<int, MDS>> bestMDSPerPoints;
+            int bestMDSIndex = -1;
             for (int j = 0; j < pointMDSArray.size(); j++)
             {
                 auto traverseMDS = pointMDSArray[j];
 
+                std::map<int, MDS> bestMDSPerPoint;
+                bestMDSPerPoint[i] = traverseMDS;
                 //search forward
                 int current_idx = i;
                 int next_idx = (current_idx + 1) % contour_count;
@@ -215,11 +255,13 @@ struct MDSContour
                         break;
                     auto& otherMDSArray = MDSs[next_idx];
 
-                    auto bestMDSForThisPoint = traverseMDS.IntersectsRange(otherMDSArray);
+                    auto bestMDSForThisPoint = traverseMDS.IntersectsRangeReturnSelected(otherMDSArray);
                     if (bestMDSForThisPoint)
                     {
                         //found intersection,extend
                         traverseMDS = *bestMDSForThisPoint;
+
+						bestMDSPerPoint[next_idx] = traverseMDS;
                     }
                     else
                     {
@@ -250,11 +292,12 @@ struct MDSContour
                         break;
                     auto& otherMDSArray = MDSs[back_idx];
 
-                    auto bestMDSForThisPoint = traverseMDS.IntersectsRange(otherMDSArray);
+                    auto bestMDSForThisPoint = traverseMDS.IntersectsRangeReturnSelected(otherMDSArray);
                     if (bestMDSForThisPoint)
                     {
                         //found intersection,extend
                         traverseMDS = *bestMDSForThisPoint;
+						bestMDSPerPoint[back_idx] = traverseMDS;
                     }
                     else
                     {
@@ -274,14 +317,38 @@ struct MDSContour
                     mark_idx = (mark_idx - 1 + contour_count) % contour_count;
                 }
                 //record segment
+
+                bestMDSPerPoints.emplace_back(bestMDSPerPoint);
                 if (end_idx != start_idx)
                 {
-                    MDSSegment seg;
-                    seg.ID_Start = start_idx;
-                    seg.ID_End = end_idx;
-                    MDSSegments.emplace_back(seg);
+					int pointcount = start_idx <= end_idx ? end_idx - start_idx + 1 : contour_count - start_idx + end_idx + 1;
+
+                    if (max_connect_points < pointcount)
+                    {
+						max_connect_points = pointcount;
+
+                        //update last segment
+
+                        MDSSegment seg;
+                        seg.ID_Start = start_idx;
+                        seg.ID_End = end_idx;
+
+                        if (MDSSegments.size() && seg == MDSSegments[MDSSegments.size() - 1])
+                            MDSSegments.pop_back();
+
+
+                        bestMDSIndex = j;
+
+						MDSSegments.emplace_back(seg);
+                    }
                 }
             }
+
+
+            //store best mds for each point
+            if(bestMDSIndex>=0)
+                for (auto& [idx, mds] : bestMDSPerPoints[bestMDSIndex])
+                    selectMDS[idx] = mds;
 
         }
 
@@ -289,6 +356,8 @@ struct MDSContour
 };
 
 typedef std::vector<MDSContour> MDSContours;
+
+extern void ConnectMDSSegments(MDSContours& contours);
 
 extern MDSContours computeMDSContours(const std::vector<std::vector<glm::vec3>>& contours);
 //y is i[

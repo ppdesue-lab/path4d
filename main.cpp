@@ -96,10 +96,11 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
+    pipe.test_idx = 35;//40
     pipe.initTool(0.2f, 5.0f);
     pipe.CalMDSForEachSlice(contours);
 
-    pipe.drawAndSaveCanvas(contours, 40);
+    pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     system("sliced_model.png");
     return 0;
 
