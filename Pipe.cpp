@@ -474,31 +474,75 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 
 void ConnectMDSSegments(MDSContours& contours)
 {
+    // Function to check if two line segments intersect
+    auto doIntersect = [](const glm::vec2& p1, const glm::vec2& q1, const glm::vec2& p2, const glm::vec2& q2) -> bool {
+        auto orientation = [](const glm::vec2& p, const glm::vec2& q, const glm::vec2& r) -> int {
+            float val = (q.y - p.y) * (r.x - q.x) - (q.x - p.x) * (r.y - q.y);
+            if (fabs(val) < 1e-6) return 0; // collinear
+            return (val > 0) ? 1 : 2; // clock or counterclock wise
+        };
+        auto onSegment = [](const glm::vec2& p, const glm::vec2& q, const glm::vec2& r) -> bool {
+            if (q.x <= std::max(p.x, r.x) && q.x >= std::min(p.x, r.x) &&
+                q.y <= std::max(p.y, r.y) && q.y >= std::min(p.y, r.y))
+                return true;
+            return false;
+        };
+        int o1 = orientation(p1, q1, p2);
+        int o2 = orientation(p1, q1, q2);
+        int o3 = orientation(p2, q2, p1);
+        int o4 = orientation(p2, q2, q1);
+        if (o1 != o2 && o3 != o4)
+            return true;
+        if (o1 == 0 && onSegment(p1, p2, q1)) return true;
+        if (o2 == 0 && onSegment(p1, q2, q1)) return true;
+        if (o3 == 0 && onSegment(p2, p1, q2)) return true;
+        if (o4 == 0 && onSegment(p2, q1, q2)) return true;
+        return false;
+    };
+
+    // Function to check if line segment intersects with any polygon in contours
+    auto lineIntersectsAnyContour = [&](const glm::vec2& A, const glm::vec2& B, const MDSContours& contours) -> bool {
+        for (const auto& contour : contours) {
+            int n = contour.points.size();
+            for (int i = 0; i < n; ++i) {
+                glm::vec2 p1(contour.points[i].x, contour.points[i].z);
+                glm::vec2 p2(contour.points[(i + 1) % n].x, contour.points[(i + 1) % n].z);
+                if (doIntersect(A, B, p1, p2)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
     struct ContourSegmentPoint
     {
         int contourID;
         int segmentID;
         int pointID;
+        bool isStart;
+        bool extruded = false;
     };
 
+    std::vector<ContourSegmentPoint> allSegmentPoints;
     for (int c = 0; c < contours.size(); ++c) {
         auto& contour = contours[c];
         
+
+        #if 1
         //for each segment points
         std::vector<ContourSegmentPoint> segmentPoints;
         for (int i=0;i<contour.MDSSegments.size();i++) {
             const auto& seg = contour.MDSSegments[i];
-            segmentPoints.push_back({c, i, seg.ID_Start});
-            segmentPoints.push_back({c, i, seg.ID_End});
+            segmentPoints.push_back({c, i, seg.ID_Start,true});
+            segmentPoints.push_back({c, i, seg.ID_End,false});
         }
 
-        std::set<int> connectedPoints; // points that are already connected
+        
         //for each segmentpoint, find nearest point in same contour(different segment)
-        for (const auto& pointA : segmentPoints) {
+        for (auto& pointA : segmentPoints) {
             const auto& segA = contour.MDSSegments[pointA.segmentID];
             if (segA.isConnected)
                 continue;
-
             const glm::vec3& posA = contour.points[pointA.pointID];
             // Get MDS for A, assume first MDS
             if (contour.selectMDS[pointA.pointID].Range()==0.0f) continue;
@@ -507,7 +551,7 @@ void ConnectMDSSegments(MDSContours& contours)
 
             float minDist = std::numeric_limits<float>::max();
             int bestEndIdx = -1;
-            for (int k = 0; k < segmentPoints.size();k++){// const auto& pointB : segmentPoints) {
+            for (int k = 0; k < segmentPoints.size();k++){
                 auto pointB = segmentPoints[k];
                 if (pointB.segmentID == pointA.segmentID)
                     continue; // same segment
@@ -516,6 +560,7 @@ void ConnectMDSSegments(MDSContours& contours)
                 const glm::vec3& posB = contour.points[pointB.pointID];
                 float dist = glm::distance(posA, posB);
                 if (dist < minDist) {
+                    
                     minDist = dist;
                     bestEndIdx = k;
                 }
@@ -523,13 +568,32 @@ void ConnectMDSSegments(MDSContours& contours)
 			//now check the nearest point's mds midnormal
 
             if (bestEndIdx != -1) {
-                const auto& pointB = segmentPoints[bestEndIdx];
+                auto& pointB = segmentPoints[bestEndIdx];
+
+                if(!(abs(pointA.segmentID - pointB.segmentID)==1 ||
+                    (pointA.segmentID==0 && pointB.segmentID == contour.MDSSegments.size()-1) ||
+                    (pointB.segmentID==0 && pointA.segmentID == contour.MDSSegments.size()-1)
+                    ))
+                {
+                    //not adjacent segment,no need connect
+                    continue;
+				}
+
+                if (!(pointA.isStart ^ pointB.isStart))
+                {
+                    //same direction,no need connect
+                    continue;
+                }
 
                 if (contour.selectMDS[pointB.pointID].Range()==0.0f) continue;
                 const MDS& mdsB = contour.selectMDS[pointB.pointID];
                 glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
                 float dot = glm::dot(midNormalA, midNormalB);
                 if (dot > 0) {
+                    
+                    //mark these two points as extruded
+                    pointA.extruded = true;
+                    pointB.extruded = true;
 
 
                     // If found a valid point to connect
@@ -540,151 +604,98 @@ void ConnectMDSSegments(MDSContours& contours)
                     newSeg.isConnected = true; // same contour
                     contour.MDSSegments.push_back(newSeg);
 
-                    //add connection to connectedPoints
-                    connectedPoints.insert(pointA.pointID);
-                    connectedPoints.insert(pointB.pointID);
                 }
 
             }
         }
+        #endif
 
-
+        
+        allSegmentPoints.insert(allSegmentPoints.end(), segmentPoints.begin(), segmentPoints.end());
     }
+    //return;
+    //-----------------------------------------------------------------
+    //outter contour connection can be added here
+    allSegmentPoints.erase(
+        std::remove_if(
+            allSegmentPoints.begin(),
+            allSegmentPoints.end(),
+            [](const ContourSegmentPoint& p) { return p.extruded; }
+        ),
+        allSegmentPoints.end()
+	);
 
-    // Now, cross-contour connections using unconnected endpoints
-    struct Endpoint {
-        int contourIdx;
-        int pointIdx;
-        bool isStart; // true for start, false for end
-    };
-    std::vector<Endpoint> endpoints;
+    for(int i=0;i< allSegmentPoints.size();i++)
+    {
+        auto& pointA = allSegmentPoints[i];
+        if (pointA.extruded)
+            continue;
 
-    for (int c = 0; c < contours.size(); ++c) {
-        const auto& contour = contours[c];
-        std::set<int> connectedPoints; // rebuild for each contour
-        for (const auto& seg : contour.MDSSegments) {
-            if (seg.isConnected) {
-                connectedPoints.insert(seg.ID_Start);
-                connectedPoints.insert(seg.otherPointID);
-            }
-        }
-        for (const auto& seg : contour.MDSSegments) {
-            if (!seg.isConnected) {
-                if (!connectedPoints.count(seg.ID_Start)) {
-                    endpoints.push_back({c, seg.ID_Start, true});
-                }
-                if (!connectedPoints.count(seg.ID_End)) {
-                    endpoints.push_back({c, seg.ID_End, false});
-                }
-            }
-        }
-    }
-
-    // For each endpoint A
-	std::vector<char> visited(endpoints.size(), 0);
-    for (int i = 0; i < endpoints.size();i++) {
-		const auto& epA = endpoints[i];
-        const auto& contourA = contours[epA.contourIdx];
-        const glm::vec3 posA = contourA.points[epA.pointIdx];
+        const auto& contourA = contours[pointA.contourID];
+        const glm::vec3 posA = contourA.points[pointA.pointID];
         // Get MDS for A, assume first MDS
-        if (contourA.selectMDS[epA.pointIdx].Range() == 0.0f) continue;
-        const MDS& mdsA = contourA.selectMDS[epA.pointIdx];
+        if (contourA.selectMDS[pointA.pointID].Range() == 0.0f) continue;
+        const MDS& mdsA = contourA.selectMDS[pointA.pointID];
         glm::vec2 midNormalA = mdsA.GetMidNormalizedDir();
 
-        // Candidates for B
-        std::vector<std::tuple<int, int, float>> candidates; // contourIdx, pointIdx, distance
+        float minDist = std::numeric_limits<float>::max();
+        int bestEndIdx = -1;
+        for (int k = 0; k < allSegmentPoints.size(); k++) {
+            auto& pointB = allSegmentPoints[k];
+            if (pointB.contourID == pointA.contourID)
+                continue; // same contour
+            if (pointB.extruded)
+                continue;
 
-        // Search other contours
-		float minDist = std::numeric_limits<float>::max();
-
-        for (int c = 0; c < contours.size(); ++c) {
-            if (c == epA.contourIdx) continue;
-            const auto& contourB = contours[c];
-            std::set<int> connectedPointsB;
-            for (const auto& seg : contourB.MDSSegments) {
-                if (seg.isConnected) {
-                    connectedPointsB.insert(seg.ID_Start);
-                    connectedPointsB.insert(seg.otherPointID);
-                }
-            }
-            for (const auto& seg : contourB.MDSSegments) {
-                if (!seg.isConnected) {
-                    // Check start
-                    {
-                        int pointIdxB = seg.ID_Start;
-                        if (connectedPointsB.count(pointIdxB)) continue;
-                        const glm::vec3 posB = contourB.points[pointIdxB];
-
-						auto distance = glm::distance(posA, posB);
-                        if (distance < minDist)
-                        {
-                            minDist = distance;
-
-                            //update candidates
-                            if (candidates.size())
-                                candidates.pop_back();
-
-                            candidates.emplace_back(c, pointIdxB, distance);
-                        }
-                    }
-
-                    // Check end
-                    {
-                        int pointIdxB = seg.ID_End;
-                        if (connectedPointsB.count(pointIdxB)) continue;
-                        const glm::vec3 posB = contourB.points[pointIdxB];
-                        auto distance = glm::distance(posA, posB);
-                        if (distance < minDist)
-                        {
-                            minDist = distance;
-
-                            //update candidates
-                            if (candidates.size())
-                                candidates.pop_back();
-
-                            candidates.emplace_back(c, pointIdxB, distance);
-                        }
-                    }
-                }
+            //find nearest seg end point
+            const glm::vec3& posB = contours[pointB.contourID].points[pointB.pointID];
+            float dist = glm::distance(posA, posB);
+            if (dist < minDist) {
+                minDist = dist;
+                bestEndIdx = k;
             }
         }
 
-        // Find the one with min distance
-        if (!candidates.empty()) {
+        //connect A and B
+        if (bestEndIdx != -1) {
+            auto& pointB = allSegmentPoints[bestEndIdx];
 
-			//check candidates' midnormal
-            auto [c,pointIdxB,distance] = candidates[0];
-            const auto& contourB = contours[c];
+            
 
-            if (contourB.selectMDS[pointIdxB].Range()==0.f) continue;
-            const MDS& mdsB = contourB.selectMDS[pointIdxB];
+            if (contours[pointB.contourID].selectMDS[pointB.pointID].Range() == 0.0f) continue;
+            const MDS& mdsB = contours[pointB.contourID].selectMDS[pointB.pointID];
             glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
-            float dot = glm::dot(midNormalA, midNormalB);
-            int otherContourIdx = -1;
-            int otherPointIdx = -1;
-            if (dot > 0)
+
+            auto primeA = posA + glm::vec3(midNormalA.x, 0, midNormalA.y) * 0.01f;
+            auto primeB = contours[pointB.contourID].points[pointB.pointID] + glm::vec3(-midNormalB.x, 0, -midNormalB.y) * 0.01f;
+            if(lineIntersectsAnyContour(primeA,primeB,contours))
             {
-                //find the target
-                //connect A and B
-
-                //visited[i] = 1; 
-                //visited[] = 1;
-
-                otherContourIdx = c;
-                otherPointIdx = pointIdxB;
-
-
-                // Add to contourA's MDSSegments
-                MDSSegment newSeg;
-                newSeg.ID_Start = epA.pointIdx;
-                newSeg.ID_End = otherPointIdx; // Note: this is other contour's point idx
-                newSeg.isConnected = true;
-                newSeg.otherContourID = otherContourIdx;
-                newSeg.otherPointID = otherPointIdx;
-                contours[epA.contourIdx].MDSSegments.push_back(newSeg);
+                //intersect with other contour,no connect
+                continue;
             }
 
+            float dot = glm::dot(midNormalA, midNormalB);
+            if (dot > 0) {
 
+                //mark these two points as extruded
+                pointA.extruded = true;
+                pointB.extruded = true;
+
+                // If found a valid point to connect
+                // Add segment
+                MDSSegment newSeg;
+                newSeg.ID_Start = pointA.pointID;
+                newSeg.ID_End = pointB.pointID;
+                newSeg.isConnected = true; // cross contour
+                newSeg.otherContourID = pointB.contourID;
+                newSeg.otherPointID = pointB.pointID;
+                contours[pointA.contourID].MDSSegments.push_back(newSeg);
+
+            }
+        }
+        else
+        {
+            int a = 0;
         }
     }
 }

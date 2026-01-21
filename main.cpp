@@ -96,10 +96,12 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx = 35;//40
+    pipe.test_idx = 48;//40
     pipe.initTool(0.2f, 5.0f);
+	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
-
+	auto end_time = clock();
+	std::cout << "MDS calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
     pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     system("sliced_model.png");
     return 0;
