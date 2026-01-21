@@ -2,3 +2,4 @@
 ![slice_with_normal](pics/sliced_model.png)
 ![tool](pics/display_tool.png)
 ![mds](pics/mds_display.png)
+![mds_segments](pics/mds_segments.png)

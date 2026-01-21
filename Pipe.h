@@ -4,6 +4,8 @@
 #include <vector>
 #include <map>
 #include <math.h>
+#include <iostream>
+#include <optional>
 
 struct MDS
 {
@@ -22,21 +24,139 @@ struct MDS
     float Range()
     {
         if(end < start)
-            return (360 - start) + end;
+            return (360 + end) - start;
         return end - start;
     }
 
     bool Intersects(const MDS& other) const
     {
-        return !(end < other.start || start > other.end);
+        //return !(end < other.start || start > other.end);
+
+        //intersect angles(may be circular)
+        if (start <= end) //normal
+        {
+            if (other.start <= other.end) //normal
+            {
+                return !(end < other.start || start > other.end);
+            }
+            else //other circular
+            {
+                return !(end < other.start && start > other.end);
+            }
+        }
+        else //circular
+        {
+            if (other.start <= other.end) //normal
+            {
+                return !(other.end < start && other.start > end);
+            }
+            else //other circular
+            {
+                return true; //always intersect
+            }
+        }
+    }
+
+    std::optional<MDS> IntersectsRange(const MDS& other) const
+    {
+        if (this->Intersects(other))
+        {
+            float new_start,new_end;
+            //get intersection range(0~360,maybe circular)
+            if (start <= end) //normal
+            {
+                if (other.start <= other.end) //normal
+                {
+                    new_start = std::max(start, other.start);
+                    new_end = std::min(end, other.end);
+                }
+                else //other circular
+                {
+                    if (start <= other.end)
+                    {
+                        new_start = start;
+                        new_end = other.end;
+                    }
+                    else //end >= other.start
+                    {
+                        new_start = other.start;
+                        new_end = end;
+                    }
+                }
+            }
+            else //circular
+            {
+                if (other.start <= other.end) //normal
+                {
+                    if (other.start <= end)
+                    {
+                        new_start = other.start;
+                        new_end = end;
+                    }
+                    else //start <= other.end
+                    {
+                        new_start = start;
+                        new_end = other.end;
+                    }
+                }
+                else //other circular
+                {
+                    new_start = std::max(start, other.start);
+                    new_end = std::min(end, other.end);
+                }
+            }
+
+
+            return MDS(new_start, new_end);
+        }
+        return std::nullopt; //no intersection
+    }
+
+    std::optional<MDS> IntersectsRange(const std::vector<MDS>& others) const
+    {
+        MDS max_intersection(0,0);
+        for (const auto& other : others)
+        {
+            auto intersection = IntersectsRange(other);
+            if (intersection)
+            {
+                if (intersection->Range() > max_intersection.Range())
+                    max_intersection = *intersection;
+            }
+        }
+        if (max_intersection.Range() > 0)
+            return max_intersection;
+        return std::nullopt; //no intersection
+    }
+
+    float GetMidAngle() const
+    {
+        if (end >= start)
+            return (start + end) / 2.0f;
+        else
+            return (start + (end + 360.0f)) / 2.0f >= 360.0f ? (start + (end + 360.0f)) / 2.0f - 360.0f : (start + (end + 360.0f)) / 2.0f;
+	}
+
+    glm::vec2 GetMidNormalizedDir() const
+    {
+        float midAngle = GetMidAngle();
+        float rad = glm::radians(midAngle);
+        return glm::vec2(cosf(rad), sinf(rad));
     }
 };
 
+struct MDSSegment
+{
+    int ID_Start;
+    int ID_End;
+};
 struct MDSContour
 {
 	std::vector<glm::vec3> points;
     std::vector<glm::vec3> normals;
     std::vector<std::vector<MDS>> MDSs;
+
+	std::vector<MDSSegment> MDSSegments;
 
     void fromPoints(const std::vector<glm::vec3>& pts)
     {
@@ -67,6 +187,105 @@ struct MDSContour
             normals.emplace_back(avg_normal);
 		}
 	}
+
+    void GreedySearchMDS()
+    {
+		//search all MDS, connect mds point to segment if two mds has mds intersection
+		int contour_count = (int)points.size();
+        std::vector<char> visited(contour_count, 0);
+
+        for (int i = 0; i < contour_count; i++)
+        {
+            if(visited[i])
+                continue;
+
+            //test each point's mds
+            auto& pointMDSArray = MDSs[i];
+            for (int j = 0; j < pointMDSArray.size(); j++)
+            {
+                auto traverseMDS = pointMDSArray[j];
+
+                //search forward
+                int current_idx = i;
+                int next_idx = (current_idx + 1) % contour_count;
+                
+                while (next_idx != i)
+                {
+                    if (visited[next_idx])
+                        break;
+                    auto& otherMDSArray = MDSs[next_idx];
+
+                    auto bestMDSForThisPoint = traverseMDS.IntersectsRange(otherMDSArray);
+                    if (bestMDSForThisPoint)
+                    {
+                        //found intersection,extend
+                        traverseMDS = *bestMDSForThisPoint;
+                    }
+                    else
+                    {
+                        //no intersection,stop extend
+                        break;
+                    }
+
+                    current_idx = next_idx;
+                    next_idx = (current_idx + 1) % contour_count;
+                }
+
+                //mark visited
+                int end_idx = current_idx;
+                int mark_idx = i;
+                while (mark_idx != (end_idx + 1) % contour_count)
+                {
+                    visited[mark_idx] = 1;
+                    mark_idx = (mark_idx + 1) % contour_count;
+                }
+
+                //search backward
+                current_idx = i;
+                int back_idx = (current_idx - 1 + contour_count) % contour_count;
+
+                while (back_idx != i)
+                {
+                    if (visited[back_idx])
+                        break;
+                    auto& otherMDSArray = MDSs[back_idx];
+
+                    auto bestMDSForThisPoint = traverseMDS.IntersectsRange(otherMDSArray);
+                    if (bestMDSForThisPoint)
+                    {
+                        //found intersection,extend
+                        traverseMDS = *bestMDSForThisPoint;
+                    }
+                    else
+                    {
+                        //no intersection,stop extend
+                        break;
+                    }
+
+                    current_idx = back_idx;
+                    back_idx = (current_idx - 1 + contour_count) % contour_count;
+                }
+                //mark visited
+                int start_idx = current_idx;
+                mark_idx = i;
+                while (mark_idx != (start_idx - 1 + contour_count) % contour_count)
+                {
+                    visited[mark_idx] = 1;
+                    mark_idx = (mark_idx - 1 + contour_count) % contour_count;
+                }
+                //record segment
+                if (end_idx != start_idx)
+                {
+                    MDSSegment seg;
+                    seg.ID_Start = start_idx;
+                    seg.ID_End = end_idx;
+                    MDSSegments.emplace_back(seg);
+                }
+            }
+
+        }
+
+    }
 };
 
 typedef std::vector<MDSContour> MDSContours;

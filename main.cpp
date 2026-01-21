@@ -57,8 +57,34 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 }
 
 
+bool testMDS()
+{
+    MDS mds1(0.0f, 30.0f);
+    MDS mds2(20.0f, 50.0f);
+    if (!mds1.Intersects(mds2))
+        return false;
+	auto range1 = mds1.IntersectsRange(mds2);
+
+    //test cross x-axis
+    MDS mds3(350.0f, 10.0f);
+    MDS mds4(5.0f, 20.0f);
+    if (!mds3.Intersects(mds4))
+        return false;
+	auto range2 = mds3.IntersectsRange(mds4);
+    
+    //test one cross xaxis and other near axis
+	MDS mds5(350.0f, 10.0f);
+	MDS mds6(330.0f, 355.0f);
+    if (!mds5.Intersects(mds6))
+        return false;
+    auto range3 = mds5.IntersectsRange(mds6);
+    
+
+    return true;
+}
 int main()
 {
+    //assert(testMDS());
     // Load model and make slices
     auto positions_all = LoadModelAndMakeSlices("Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj", glm::vec3(0, 1, 0), 0.1f);
 
@@ -72,6 +98,7 @@ int main()
     }
     pipe.initTool(0.2f, 5.0f);
     pipe.CalMDSForEachSlice(contours);
+
     pipe.drawAndSaveCanvas(contours, 40);
     system("sliced_model.png");
     return 0;

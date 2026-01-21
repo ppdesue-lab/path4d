@@ -133,6 +133,83 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
         }
         layer_idx++;
     }
+
+    layer_idx = 0;
+    for (const auto& pair : positions_all)
+    {
+        if (layer_idx != idx && idx != -1)
+        {
+            layer_idx++;
+            continue;
+        }
+        const auto& contours = pair.second;
+        int contour_idx = 0;
+        for (const auto& contour : contours)
+        {
+			//draw mds segments
+			for (const auto& seg : contour.MDSSegments)
+			{
+                
+                int start_idx = seg.ID_Start;
+                int end_idx = seg.ID_End;
+                if(start_idx < end_idx)
+                {
+                    //draw line from start_idx to end_idx
+                    for(int i=start_idx;i< end_idx;i++)
+                    {
+                        float x1 = contour.points[i].x * scale + offsetX;
+                        float y1 = contour.points[i].z * scale + offsetY;
+                        float x2 = contour.points[(i + 1) % contour.points.size()].x * scale + offsetX;
+                        float y2 = contour.points[(i + 1) % contour.points.size()].z * scale + offsetY;
+
+                        context.begin_path();
+                        context.move_to(x1, y1);
+                        context.line_to(x2, y2);
+                        context.close_path();
+                        context.set_line_width(3.f);
+                        context.set_color(canvas_ity::stroke_style, 1, 0, 0, 1.f);
+                        context.stroke();
+                    }
+                }
+                else
+                {
+                    //split it into two parts
+                    for (int i = start_idx; i < contour.points.size(); i++)
+                    {
+                        float x1 = contour.points[i].x * scale + offsetX;
+                        float y1 = contour.points[i].z * scale + offsetY;
+                        float x2 = contour.points[(i + 1) % contour.points.size()].x * scale + offsetX;
+                        float y2 = contour.points[(i + 1) % contour.points.size()].z * scale + offsetY;
+
+                        context.begin_path();
+                        context.move_to(x1, y1);
+                        context.line_to(x2, y2);
+                        context.close_path();
+                        context.set_line_width(3.f);
+                        context.set_color(canvas_ity::stroke_style, 1, 0, 0, 1.f);
+                        context.stroke();
+                    }
+                    for (int i = 0; i < end_idx; i++)
+                    {
+                        float x1 = contour.points[i].x * scale + offsetX;
+                        float y1 = contour.points[i].z * scale + offsetY;
+                        float x2 = contour.points[(i + 1) % contour.points.size()].x * scale + offsetX;
+                        float y2 = contour.points[(i + 1) % contour.points.size()].z * scale + offsetY;
+
+                        context.begin_path();
+                        context.move_to(x1, y1);
+                        context.line_to(x2, y2);
+                        context.close_path();
+                        context.set_line_width(3.f);
+                        context.set_color(canvas_ity::stroke_style, 1, 0, 0, 1.f);
+                        context.stroke();
+                    }
+
+                }
+            }
+        }
+    }
+
     //paint tool on canvas
     {
         Tool testtool(tool.radius, tool.height);
@@ -153,7 +230,12 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                     auto pos = contour.points[i];
                     testtool.Position = pos +contour.normals[i] * (tool.radius + 0.01f);
                     //testtool.SetRotation(contour.normals[i]);
-					float angle = atan2f(contour.normals[i].z, contour.normals[i].x);
+                    float angle = atan2f(contour.normals[i].z, contour.normals[i].x);
+                    if (contour.MDSs[i].size())
+                    {
+                        angle = 0.5f * (contour.MDSs[0][0].start + contour.MDSs[0][0].end);
+
+                    }
                     testtool.SetRotationAngle(angle);
                     goto A;
                 }
@@ -176,19 +258,19 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
         //context.move_to(x1, y1);
         //context.line_to(x2, y2);
 
-        context.move_to(x1+prepDistance.x, y1 + prepDistance.z);
-        context.line_to(x2+prepDistance.x, y2 + prepDistance.z);
+        context.move_to(x2 + prepDistance.x, y2 + prepDistance.z);
+        context.line_to(x1+prepDistance.x, y1 + prepDistance.z);
 
 
-        context.line_to(x2 - prepDistance.x, y2 - prepDistance.z);
         context.line_to(x1 - prepDistance.x, y1 - prepDistance.z);
+        context.line_to(x2 - prepDistance.x, y2 - prepDistance.z);
         context.addFan(
                     x1,
                     y1,
                     scaled_radius, // radius
                     0.0f,
                     2.0f * 3.14159265f,
-                    false
+            true
                 );
 
 
@@ -348,6 +430,9 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 				auto mdsArray = calMDSForPoint(contours, testtool, kdtree);
                 contour.MDSs.emplace_back(mdsArray);
             }
+
+            contour.GreedySearchMDS();
+            int a = 0;
         }
 	}
 }

@@ -5,6 +5,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 set(projname path4d)
 
 project(${projname})
+set(CMAKE_CXX_STANDARD 17)
 
 include(FetchContent)
 
