@@ -1,3 +1,4 @@
 ![img](pics/Snipaste_2026-01-19_16-11-42.png)
 ![slice_with_normal](pics/sliced_model.png)
-![slice_with_normal](pics/display_tool.png)
+![tool](pics/display_tool.png)
+![mds](pics/mds_display.png)

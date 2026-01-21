@@ -78,7 +78,7 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                 float x2 = contour.points[(i + 1)% ptcount].x * scale + offsetX;
                 float y2 = contour.points[(i + 1) % ptcount].z * scale + offsetY;
 
-				glm::vec3 normalpt = contour.points[i] + contour.normals[i] * 0.2f;
+				glm::vec3 normalpt = contour.points[i] + contour.normals[i] * tool.radius;
 				float x3 = normalpt.x * scale + offsetX;
 				float y3 = normalpt.z * scale + offsetY;
 
@@ -88,11 +88,31 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                 context.move_to(x1, y1);
                 context.line_to(x2, y2);
 
+#if 0
+                //add normal
                 context.move_to(x1, y1);
                 context.line_to(x3, y3);
-
-                //add normal
-                
+#endif
+                //add mds fan
+                //static bool firstdraw = true;
+                //if (firstdraw)
+                {
+                    //firstdraw = !firstdraw;
+                    auto mdsArray = contour.MDSs[i];
+                    for (auto& mds : mdsArray)
+                    {
+                        float startRad = glm::radians(mds.start);
+                        float endRad = glm::radians(mds.end);
+                        context.addFan(
+                            x3,
+                            y3,
+                            8.0f, // radius
+                            startRad,
+                            endRad,
+                            true
+                        );
+                    }
+                }
                 //context.addFan(
                 //    x1,
                 //    y1,
@@ -106,13 +126,13 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                 auto color = randColor();
                 context.set_color(canvas_ity::stroke_style, color.r, color.g, color.b, 1.f);
                 context.stroke();
+
             }
 
             contour_idx++;
         }
         layer_idx++;
     }
-
     //paint tool on canvas
     {
         Tool testtool(tool.radius, tool.height);
@@ -131,8 +151,10 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                 for(int i=0;i<contour.points.size();i++)
                 {
                     auto pos = contour.points[i];
-                    testtool.Position = pos +contour.normals[i] * (tool.radius + 0.001f);
-                    testtool.SetRotation(contour.normals[i]);
+                    testtool.Position = pos +contour.normals[i] * (tool.radius + 0.01f);
+                    //testtool.SetRotation(contour.normals[i]);
+					float angle = atan2f(contour.normals[i].z, contour.normals[i].x);
+                    testtool.SetRotationAngle(angle);
                     goto A;
                 }
             }
@@ -166,7 +188,7 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                     scaled_radius, // radius
                     0.0f,
                     2.0f * 3.14159265f,
-                    true
+                    false
                 );
 
 
@@ -184,24 +206,44 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
     //save as tga
 	//stbi_write_tga("sliced_model.tga", width, height, 4, image);
 
+	stbi_flip_vertically_on_write(1);
     // Save as PNG
     stbi_write_png("sliced_model.png", width, height, 4, image, width * 4);
 }
 
 void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 {
-    auto isAngleValid = [](const Tool& tool, const MDSContours& contours, const KDTree& kdtree) -> bool
+    auto ToKDtree2D = [](const glm::vec3& pt) -> glm::vec2
+    {
+        return glm::vec2(pt.x, pt.z);
+	};
+
+    auto isAngleValid = [&ToKDtree2D](const Tool& tool, const MDSContours& contours, const KDTree& kdtree) -> bool
     {
         // 使用KDTree找到最近的点
-        glm::vec2 nearest_pt = kdtree.nearest(tool.Position);
-        float dist_sq = glm::length(glm::vec2(tool.Position.x, tool.Position.z) - nearest_pt);
+        glm::vec2 nearest_pt = kdtree.nearest(ToKDtree2D(tool.Position));
+        float dist_sq = glm::length(ToKDtree2D(tool.Position) - nearest_pt);
         dist_sq *= dist_sq;
         float threshold = tool.radius;
         if (dist_sq < threshold * threshold) {
             return false;
         }
         //todo:check cylinder part
-        
+        //check point inside cylinder part or not
+        auto search_cylinder_center = ToKDtree2D(tool.Position + tool.GetDirection() * (tool.height / 2.0f));
+        auto search_cylinder_radius = sqrtf(tool.radius * tool.radius + (tool.height / 2.0f) * (tool.height / 2.0f));
+        auto potential_pts = kdtree.nearestByRadius(search_cylinder_center, search_cylinder_radius);
+        for (const auto& pt : potential_pts)
+        {
+            auto to_pt = pt - ToKDtree2D(tool.Position);
+            float to_along = glm::dot(to_pt, ToKDtree2D(tool.GetDirection()));
+            if (to_along < 0 || to_along > tool.height)
+                continue;
+            auto proj_pt = ToKDtree2D(tool.Position + tool.GetDirection() * to_along);
+            float dist_to_axis = glm::length(pt - proj_pt);
+            if (dist_to_axis < tool.radius)
+                return false;
+        }
         return true;
     };
 
@@ -260,7 +302,7 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
             int end_idx = getValidSubIdx(frontid - 1);
             
             //clear tag
-            for(int k=start_idx;k<end_idx;k++)
+            for(int k=start_idx;k<=end_idx;k++)
             {
 				int valid_idx = getValidSubIdx(k);
                 validangle[valid_idx]=0;
@@ -268,7 +310,7 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
 
             //construct MDS
             float start_angle = start_idx * sample_step;
-            float end_angle = end_idx * sample_step + sample_step;
+            float end_angle = end_idx * sample_step ;
             mdsArray.emplace_back(MDS(start_angle, end_angle));
         }
 
@@ -290,6 +332,9 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
             points.insert(points.end(), contour.points.begin(), contour.points.end());
         kdtree.init(points);
 
+        //test kdtree
+        //auto testpt = points[0] + glm::vec3(0, 0, 0.01f);
+		//auto testresult = kdtree.nearest(testpt);
         for (auto& contour : contours)
         {
             contour.MDSs.clear();

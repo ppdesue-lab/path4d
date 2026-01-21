@@ -100,12 +100,12 @@ public:
         Position = pos;
 	}
 
-    glm::vec3 GetDirection()
+    glm::vec3 GetDirection() const
     {
 		return glm::normalize(LenDir);
     }
 
-    glm::vec3 GetPerpDirection()
+    glm::vec3 GetPerpDirection() const
     {
         return glm::normalize(glm::vec3(-LenDir.z, 0, LenDir.x));
 	}
