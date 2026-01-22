@@ -17,8 +17,8 @@ struct MDS
 
     MDS(float s=0, float e=0)
     {
-        start = s;
-        end = e;
+        start = fmodf(s +360,360);
+        end = fmodf(e + 360, 360);
     }
 
     float Range() const
@@ -193,7 +193,7 @@ struct MDSContour
     {
         //the first point == the last point,need remove it
         
-        for (int i = 0; i < pts.size()-1; i++)
+        for (int i = 0; i < pts.size(); i++)
         {
             if(points.size())
                 if(points[points.size() - 1] == pts[i])
@@ -201,8 +201,8 @@ struct MDSContour
 
 			points.emplace_back(pts[i]);
         }
-        if(pts[pts.size()-1] != pts[0])
-			points.emplace_back(pts[pts.size() - 1]);
+        if (pts[pts.size() - 1] == pts[0])
+            points.pop_back();// (pts[pts.size() - 1]);
 
         int count = (int)points.size();
         for(int i=0;i< count;i++)
@@ -221,6 +221,121 @@ struct MDSContour
 
     void GreedySearchMDS()
     {
+        //resize 
+        int countur_count = (int)points.size();
+        selectMDS.resize(countur_count);
+        std::vector<char> visited(countur_count, 0);
+
+        //iterate each point
+        for (int i = 0; i < countur_count; i++)
+        {
+            
+            if (visited[i])
+                continue;
+            auto& pointMDSArray = MDSs[i];
+
+            std::vector<std::map<int, MDS>> possibleSelectedMDSs;
+            
+            for (int mds_idx = 0; mds_idx < pointMDSArray.size(); mds_idx++)
+            {
+                //test each mds
+                auto traverseMDS = pointMDSArray[mds_idx];
+                
+                std::map<int, MDS> possibleSelectedMDS;
+                possibleSelectedMDS[i] = traverseMDS;
+
+                int next_idx = (i + 1);
+                for(;next_idx< countur_count;next_idx++)
+                {
+
+                    //get next_idx's mds
+                    auto& otherMDSArray = MDSs[next_idx];
+                    //test intersection
+                    auto intersectSelection = traverseMDS.IntersectsRangeReturnSelected(otherMDSArray);
+                    if(intersectSelection)
+                    {
+                        traverseMDS = *intersectSelection;
+
+                        possibleSelectedMDS[next_idx] = traverseMDS;
+                    }
+                    else 
+                    {
+                        //no intersection,break
+                        break;
+                    }
+                }
+
+
+                possibleSelectedMDSs.emplace_back(possibleSelectedMDS);
+            }
+
+            //finished all mds test for point i
+            //0 find max connected mds
+            int max_connect_points = 0;
+            int bestMDSIndex = -1;
+            for(int k=0;k< possibleSelectedMDSs.size();k++)
+            {
+                int connect_points = (int)possibleSelectedMDSs[k].size();
+                if(connect_points > max_connect_points)
+                {
+                    max_connect_points = connect_points;
+                    bestMDSIndex = k;
+                }
+            }
+            //1 set visited
+            if (bestMDSIndex >= 0)
+            {
+                auto& bestMDSMap = possibleSelectedMDSs[bestMDSIndex];
+                for (auto& [idx, mds] : bestMDSMap)
+                {
+                    visited[idx] = 1;
+                    selectMDS[idx] = mds;
+                }
+            }
+            //2 record segment
+            if (max_connect_points > 1)
+            {
+                auto& bestMDSMap = possibleSelectedMDSs[bestMDSIndex];
+                MDSSegment seg;
+                seg.ID_Start = bestMDSMap.begin()->first;
+                seg.ID_End = bestMDSMap.rbegin()->first;
+
+                if (MDSSegments.size() && seg == MDSSegments[MDSSegments.size() - 1])
+                    MDSSegments.pop_back();
+
+                MDSSegments.emplace_back(seg);
+            }
+            
+        }
+
+        //merge end segment & first segment
+        if (MDSSegments.size() > 1)
+        {
+            auto lastSeg = MDSSegments[MDSSegments.size() - 1];
+            auto startSeg = MDSSegments[0];
+
+            if (lastSeg.ID_End == countur_count - 1 && startSeg.ID_Start == 0)
+            {
+                //check mds intersection
+                auto mds1 = selectMDS[lastSeg.ID_End];
+                auto mds2 = selectMDS[startSeg.ID_Start];
+                if (mds1.Intersects(mds2))
+                {
+                    MDSSegment mergedSeg;
+                    mergedSeg.ID_Start = lastSeg.ID_Start;
+                    mergedSeg.ID_End = startSeg.ID_End;
+                    //remove last & first
+                    MDSSegments.erase(MDSSegments.begin());
+                    MDSSegments.pop_back();
+                    //add merged
+                    MDSSegments.insert(MDSSegments.begin(), mergedSeg);
+                }
+            }
+        }
+    }
+    void GreedySearchMDS2()
+    {
+
 		//search all MDS, connect mds point to segment if two mds has mds intersection
 		int contour_count = (int)points.size();
         selectMDS.resize(contour_count);
@@ -276,47 +391,50 @@ struct MDSContour
                 //mark visited
                 int end_idx = current_idx;
                 int mark_idx = i;
-                while (mark_idx != (end_idx + 1) % contour_count)
+
+                visited[mark_idx] = 1;
+                while (mark_idx != (end_idx % contour_count))
                 {
                     visited[mark_idx] = 1;
                     mark_idx = (mark_idx + 1) % contour_count;
                 }
 
                 //search backward
-                current_idx = i;
-                int back_idx = (current_idx - 1 + contour_count) % contour_count;
-
-                while (back_idx != i)
-                {
-                    if (visited[back_idx])
-                        break;
-                    auto& otherMDSArray = MDSs[back_idx];
-
-                    auto bestMDSForThisPoint = traverseMDS.IntersectsRangeReturnSelected(otherMDSArray);
-                    if (bestMDSForThisPoint)
-                    {
-                        //found intersection,extend
-                        traverseMDS = *bestMDSForThisPoint;
-						bestMDSPerPoint[back_idx] = traverseMDS;
-                    }
-                    else
-                    {
-                        //no intersection,stop extend
-                        break;
-                    }
-
-                    current_idx = back_idx;
-                    back_idx = (current_idx - 1 + contour_count) % contour_count;
-                }
-                //mark visited
-                int start_idx = current_idx;
-                mark_idx = i;
-                while (mark_idx != (start_idx - 1 + contour_count) % contour_count)
-                {
-                    visited[mark_idx] = 1;
-                    mark_idx = (mark_idx - 1 + contour_count) % contour_count;
-                }
-                //record segment
+                //traverseMDS = pointMDSArray[j];
+                //current_idx = i;
+                //int back_idx = (current_idx - 1 + contour_count) % contour_count;
+                //
+                //while (back_idx != i)
+                //{
+                //    if (visited[back_idx])
+                //        break;
+                //    auto& otherMDSArray = MDSs[back_idx];
+                //
+                //    auto bestMDSForThisPoint = traverseMDS.IntersectsRangeReturnSelected(otherMDSArray);
+                //    if (bestMDSForThisPoint)
+                //    {
+                //        //found intersection,extend
+                //        traverseMDS = *bestMDSForThisPoint;
+				//		bestMDSPerPoint[back_idx] = traverseMDS;
+                //    }
+                //    else
+                //    {
+                //        //no intersection,stop extend
+                //        break;
+                //    }
+                //
+                //    current_idx = back_idx;
+                //    back_idx = (current_idx - 1 + contour_count) % contour_count;
+                //}
+                ////mark visited
+                int start_idx = i;// current_idx;
+                //mark_idx = i;
+                //while (mark_idx != (start_idx - 1 + contour_count) % contour_count)
+                //{
+                //    visited[mark_idx] = 1;
+                //    mark_idx = (mark_idx - 1 + contour_count) % contour_count;
+                //}
+                ////record segment
 
                 bestMDSPerPoints.emplace_back(bestMDSPerPoint);
                 if (end_idx != start_idx)
@@ -343,6 +461,25 @@ struct MDSContour
                     }
                 }
             }
+
+            //merge end segment & first segment
+            //if (MDSSegments.size() > 1)
+            //{
+            //    auto lastSeg = MDSSegments[MDSSegments.size() - 1];
+            //    auto startSeg = MDSSegments[0];
+
+            //    if (lastSeg.ID_End == contour_count - 1 && startSeg.ID_Start == 0)
+            //    {
+            //        MDSSegment mergedSeg;
+            //        mergedSeg.ID_Start = lastSeg.ID_Start;
+            //        mergedSeg.ID_End = startSeg.ID_End;
+            //        //remove last & first
+            //        MDSSegments.erase(MDSSegments.begin());
+            //        MDSSegments.pop_back();
+            //        //add merged
+            //        MDSSegments.insert(MDSSegments.begin(), mergedSeg);
+            //    }
+            //}
 
 
             //store best mds for each point

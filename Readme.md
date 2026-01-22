@@ -4,3 +4,4 @@
 ![mds](pics/mds_display.png)
 ![mds_segments](pics/mds_segments.png)
 ![mds_connection](pics/mds_connection_result.png)
+![mds_allconnection](connect_all_segments.png)

@@ -1,5 +1,7 @@
 #include "Pipe.h"   
 
+//#define SHOW_ALL_MDS
+
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
@@ -101,9 +103,12 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                 //if (firstdraw)
                 {
                     //firstdraw = !firstdraw;
-                    //auto mdsArray = contour.MDSs[i];
-                    //for (auto& mds : mdsArray)
+#ifdef SHOW_ALL_MDS
+                    auto mdsArray = contour.MDSs[i];
+                    for (auto& mds : mdsArray)
+#else
                     auto mds = contour.selectMDS[i];
+#endif
                     if(mds.Range()>0)
                     {
                         float startRad = glm::radians(mds.start);
@@ -116,16 +121,9 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                             endRad,
                             true
                         );
+
                     }
                 }
-                //context.addFan(
-                //    x1,
-                //    y1,
-                //    4.0f, // radius
-                //    0.0f,
-                //    0.5f * 3.14159265f,
-                //    true
-                //);
 
                 context.close_path();
                 auto color = randColor();
@@ -154,6 +152,7 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
 			//draw mds segments
 			for (const auto& seg : contour.MDSSegments)
 			{
+                
                 if (seg.isConnected) {
                     // Draw a line from this contour's ID_Start to other contour's otherPointID
                     const glm::vec3& posA = contour.points[seg.ID_Start];
@@ -173,10 +172,47 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                     context.close_path();
                     context.set_line_width(3.f);
                     context.set_color(canvas_ity::stroke_style, 0, 1, 0, 1.f); // green for connected
+
+
                     context.stroke();
-                } else {
+                } else{
                     int start_idx = seg.ID_Start;
                     int end_idx = seg.ID_End;
+
+
+
+                    //float x1 = contour.points[start_idx].x * scale + offsetX;
+                    //float y1 = contour.points[start_idx].z * scale + offsetY;
+                    //float x2 = contour.points[end_idx].x * scale + offsetX;
+                    //float y2 = contour.points[end_idx].z * scale + offsetY;
+                    //auto mds = contour.selectMDS[seg.ID_Start];
+                    //float startRad = glm::radians(mds.start);
+                    //float endRad = glm::radians(mds.end);
+                    //context.begin_path();
+                    //context.addFan(
+                    //    x1,
+                    //    y1,
+                    //    8.0f, // radius
+                    //    startRad,
+                    //    endRad,
+                    //    true
+                    //);
+                    //auto mds2 = contour.selectMDS[seg.ID_End];
+                    //float startRad2 = glm::radians(mds2.start);
+                    //float endRad2 = glm::radians(mds2.end);
+                    //context.addFan(
+                    //    x2,
+                    //    y2,
+                    //    8.0f, // radius
+                    //    startRad2,
+                    //    endRad2,
+                    //    true
+                    //);
+                    //context.close_path();
+                    //context.set_color(canvas_ity::stroke_style,0, 1, 1, 1);
+                    //context.stroke();
+
+#if 1
                     if(start_idx < end_idx)
                     {
                         //draw line from start_idx to end_idx
@@ -231,6 +267,8 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                         }
 
                     }
+
+#endif
                 }
             }
         }
@@ -419,7 +457,33 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
             //construct MDS
             float start_angle = start_idx * sample_step;
             float end_angle = end_idx * sample_step ;
+            //narrow mds
+            //MDS tmp(start_angle, end_angle);
+            //if (tmp.Range() > sample_step)
+            //{
+            //    start_angle = fmodf(start_angle + sample_step / 2, 360.0);
+            //    end_angle = fmodf(end_angle - sample_step / 2, 360.0);
+            //}
             mdsArray.emplace_back(MDS(start_angle, end_angle));
+        }
+
+        //remain 1 with larger range
+        if(mdsArray.size()>1)
+        {
+            float max_range = 0.0f;
+            int max_idx = -1;
+            for(int i=0;i< mdsArray.size();i++)
+            {
+                float range = mdsArray[i].Range();
+                if(range > max_range)
+                {
+                    max_range = range;
+                    max_idx = i;
+                }
+            }
+            std::vector<MDS> filteredMDS;
+            filteredMDS.emplace_back( mdsArray[max_idx]);
+            mdsArray = filteredMDS;
         }
 
         return mdsArray;
@@ -451,7 +515,7 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
                 auto& contour_pt = contour.points[i];
                 
 				Tool testtool(tool.radius, tool.height);
-				testtool.Position = contour_pt + contour.normals[i] * (tool.radius + 0.01f);
+				testtool.Position = contour_pt + contour.normals[i] * (tool.radius + 0.05f);
 
 				auto mdsArray = calMDSForPoint(contours, testtool, kdtree);
                 contour.MDSs.emplace_back(mdsArray);
@@ -539,9 +603,11 @@ void ConnectMDSSegments(MDSContours& contours)
 
         
         //for each segmentpoint, find nearest point in same contour(different segment)
-        for (auto& pointA : segmentPoints) {
+        //for (auto& pointA : segmentPoints) {
+        for(int i=0;i<segmentPoints.size();i++){
+            auto& pointA = segmentPoints[i];
             const auto& segA = contour.MDSSegments[pointA.segmentID];
-            if (segA.isConnected)
+            if (segA.isConnected || pointA.extruded)
                 continue;
             const glm::vec3& posA = contour.points[pointA.pointID];
             // Get MDS for A, assume first MDS
@@ -553,7 +619,8 @@ void ConnectMDSSegments(MDSContours& contours)
             int bestEndIdx = -1;
             for (int k = 0; k < segmentPoints.size();k++){
                 auto pointB = segmentPoints[k];
-                if (pointB.segmentID == pointA.segmentID)
+                if ((contours.size()>1 && pointB.segmentID == pointA.segmentID) ||
+                    i==k || pointB.extruded)
                     continue; // same segment
 
                 //find nearest seg end point
@@ -570,30 +637,34 @@ void ConnectMDSSegments(MDSContours& contours)
             if (bestEndIdx != -1) {
                 auto& pointB = segmentPoints[bestEndIdx];
 
-                if(!(abs(pointA.segmentID - pointB.segmentID)==1 ||
-                    (pointA.segmentID==0 && pointB.segmentID == contour.MDSSegments.size()-1) ||
-                    (pointB.segmentID==0 && pointA.segmentID == contour.MDSSegments.size()-1)
-                    ))
-                {
-                    //not adjacent segment,no need connect
-                    continue;
-				}
+    //            if(!(abs(pointA.segmentID - pointB.segmentID)==1 ||
+    //                (pointA.segmentID==0 && pointB.segmentID == contour.MDSSegments.size()-1) ||
+    //                (pointB.segmentID==0 && pointA.segmentID == contour.MDSSegments.size()-1)
+    //                ))
+    //            {
+    //                //not adjacent segment,no need connect
+    //                continue;
+				//}
 
                 if (!(pointA.isStart ^ pointB.isStart))
                 {
                     //same direction,no need connect
-                    continue;
+                    //continue;
                 }
 
                 if (contour.selectMDS[pointB.pointID].Range()==0.0f) continue;
                 const MDS& mdsB = contour.selectMDS[pointB.pointID];
                 glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
                 float dot = glm::dot(midNormalA, midNormalB);
-                if (dot > 0) {
-                    
+                //if (dot > 0) 
+                
+                if (mdsA.Intersects(mdsB))
+                {
+
                     //mark these two points as extruded
                     pointA.extruded = true;
                     pointB.extruded = true;
+
 
 
                     // If found a valid point to connect
@@ -605,6 +676,8 @@ void ConnectMDSSegments(MDSContours& contours)
                     contour.MDSSegments.push_back(newSeg);
 
                 }
+                else
+                    int a = 0;
 
             }
         }
@@ -633,8 +706,10 @@ void ConnectMDSSegments(MDSContours& contours)
 
         const auto& contourA = contours[pointA.contourID];
         const glm::vec3 posA = contourA.points[pointA.pointID];
+        const glm::vec3 normalA = contourA.normals[pointA.pointID];
         // Get MDS for A, assume first MDS
-        if (contourA.selectMDS[pointA.pointID].Range() == 0.0f) continue;
+        if (contourA.selectMDS[pointA.pointID].Range() == 0.0f) 
+            continue;
         const MDS& mdsA = contourA.selectMDS[pointA.pointID];
         glm::vec2 midNormalA = mdsA.GetMidNormalizedDir();
 
@@ -647,10 +722,33 @@ void ConnectMDSSegments(MDSContours& contours)
             if (pointB.extruded)
                 continue;
 
+            if (i == k)
+                continue;
+
+            const MDS& mdsB = contours[pointB.contourID].selectMDS[pointB.pointID];
+            glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
+
+            float dot = glm::dot(midNormalA, midNormalB);
+
             //find nearest seg end point
             const glm::vec3& posB = contours[pointB.contourID].points[pointB.pointID];
+            const glm::vec3& normalB = contours[pointB.contourID].normals[pointB.pointID];
             float dist = glm::distance(posA, posB);
-            if (dist < minDist) {
+
+            auto tmpA = posA + normalA * 0.05f;
+            auto tmpB = posB + normalB * 0.05f;
+
+            glm::vec2 primeA(tmpA.x, tmpA.z);
+            glm::vec2 primeB(tmpB.x, tmpB.z);
+
+            if (dot > 0 && dist < minDist && !lineIntersectsAnyContour(primeA, primeB, contours)) {
+
+                //if (lineIntersectsAnyContour(primeA, primeB, contours))
+                //{
+                //    //intersect with other contour,no connect
+                //    continue;
+                //}
+
                 minDist = dist;
                 bestEndIdx = k;
             }
@@ -660,22 +758,23 @@ void ConnectMDSSegments(MDSContours& contours)
         if (bestEndIdx != -1) {
             auto& pointB = allSegmentPoints[bestEndIdx];
 
-            
 
-            if (contours[pointB.contourID].selectMDS[pointB.pointID].Range() == 0.0f) continue;
-            const MDS& mdsB = contours[pointB.contourID].selectMDS[pointB.pointID];
-            glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
+            //if (contours[pointB.contourID].selectMDS[pointB.pointID].Range() == 0.0f) 
+            //    continue;
+            //const MDS& mdsB = contours[pointB.contourID].selectMDS[pointB.pointID];
+            //glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
 
-            auto primeA = posA + glm::vec3(midNormalA.x, 0, midNormalA.y) * 0.01f;
-            auto primeB = contours[pointB.contourID].points[pointB.pointID] + glm::vec3(-midNormalB.x, 0, -midNormalB.y) * 0.01f;
-            if(lineIntersectsAnyContour(primeA,primeB,contours))
+            //auto primeA = posA + glm::vec3(midNormalA.x, 0, midNormalA.y) * 0.01f;
+            //auto primeB = contours[pointB.contourID].points[pointB.pointID] + glm::vec3(-midNormalB.x, 0, -midNormalB.y) * 0.01f;
+            //if(lineIntersectsAnyContour(primeA,primeB,contours))
+            //{
+            //    //intersect with other contour,no connect
+            //    continue;
+            //}
+
+            //float dot = glm::dot(midNormalA, midNormalB);
+            //if (dot > 0) 
             {
-                //intersect with other contour,no connect
-                continue;
-            }
-
-            float dot = glm::dot(midNormalA, midNormalB);
-            if (dot > 0) {
 
                 //mark these two points as extruded
                 pointA.extruded = true;
@@ -698,6 +797,34 @@ void ConnectMDSSegments(MDSContours& contours)
             int a = 0;
         }
     }
+
+
+#pragma region Debug Test
+
+//#ifndef NDEBUG
+    allSegmentPoints.erase(
+        std::remove_if(
+            allSegmentPoints.begin(),
+            allSegmentPoints.end(),
+            [](const ContourSegmentPoint& p) { return p.extruded; }
+        ),
+        allSegmentPoints.end()
+    );
+
+    static int i = 0;
+    if (allSegmentPoints.size())
+    {
+        printf("remaining segment [%d] points:%d\n", i, (int)allSegmentPoints.size());
+        int a = 0;
+    }
+    i++;
+//#endif
+
+#pragma endregion
+
+    
+	
+
 }
 
 MDSContours computeMDSContours(const std::vector<std::vector<glm::vec3>>& contour_positions)
