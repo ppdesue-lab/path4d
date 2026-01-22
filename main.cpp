@@ -96,8 +96,8 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx = 24;// 76;//40
-    pipe.initTool(0.2f, 10.0f);
+    pipe.test_idx =22;// 76;//40
+    pipe.initTool(1.f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
 	auto end_time = clock();

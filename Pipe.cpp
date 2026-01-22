@@ -586,8 +586,79 @@ void ConnectMDSSegments(MDSContours& contours)
         bool isStart;
         bool extruded = false;
     };
-
+    
     std::vector<ContourSegmentPoint> allSegmentPoints;
+
+    //insert all points
+    for(int c=0;c< contours.size();c++)
+    {
+        //for each contour
+        auto& contour = contours[c];
+        for(int i=0;i< contour.MDSSegments.size();i++)
+        {
+            //push to allsegmentspoints for later processing
+            auto& seg = contour.MDSSegments[i];
+            allSegmentPoints.push_back({ c, i, seg.ID_Start,true });
+            allSegmentPoints.push_back({ c, i, seg.ID_End,false });
+        }
+    }
+    //container
+    std::vector< MDSSegment> segment_in_contours;
+    //connect single contour first
+    int segpoint_idx = 0;
+    for(int c=0;c< contours.size();c++)
+    {
+        //for each contour
+        auto& contour = contours[c];
+        int segpoint_idx_incontour = 0;
+        int fixed_segment_count = contour.MDSSegments.size();
+        int total_segpoint_count = contour.MDSSegments.size() * 2;
+        for(int i=0;i< fixed_segment_count;i++)
+        {
+            //connect cur segment'end to next segment's start
+            auto& seg = contour.MDSSegments[i];
+            int next_idx = (i + 1) % fixed_segment_count;
+            auto& next_seg = contour.MDSSegments[next_idx];
+            //check if two mds has intersection
+            const MDS& mdsA = contour.selectMDS[seg.ID_End];
+            const MDS& mdsB = contour.selectMDS[next_seg.ID_Start];
+            
+
+            if (!seg.isConnected && !next_seg.isConnected
+                && mdsA.Intersects(mdsB))
+            {
+                //check intersection with contour
+                auto tmpA = contour.points[seg.ID_End] + contour.normals[seg.ID_End] * 0.05f;
+                auto tmpB = contour.points[next_seg.ID_Start] + contour.normals[next_seg.ID_Start] * 0.05f;
+
+                glm::vec2 primeA(tmpA.x, tmpA.z);
+                glm::vec2 primeB(tmpB.x, tmpB.z);
+
+                if (!lineIntersectsAnyContour(primeA, primeB, contours))
+                {
+
+                    //mark these two points as extruded
+                    //add segment
+                    MDSSegment newSeg;
+                    newSeg.ID_Start = seg.ID_End;
+                    newSeg.ID_End = next_seg.ID_Start;
+                    newSeg.isConnected = true; // same contour
+                    contour.MDSSegments.push_back(newSeg);
+
+                    allSegmentPoints[segpoint_idx + (segpoint_idx_incontour + 1) % total_segpoint_count].extruded = true;
+                    allSegmentPoints[segpoint_idx + (segpoint_idx_incontour + 2) % total_segpoint_count].extruded = true;
+                }
+                
+            }
+
+            segpoint_idx_incontour += 2;
+            
+
+        }
+        segpoint_idx += segpoint_idx_incontour;
+    }
+
+#if 0
     for (int c = 0; c < contours.size(); ++c) {
         auto& contour = contours[c];
         
@@ -637,25 +708,25 @@ void ConnectMDSSegments(MDSContours& contours)
             if (bestEndIdx != -1) {
                 auto& pointB = segmentPoints[bestEndIdx];
 
-    //            if(!(abs(pointA.segmentID - pointB.segmentID)==1 ||
-    //                (pointA.segmentID==0 && pointB.segmentID == contour.MDSSegments.size()-1) ||
-    //                (pointB.segmentID==0 && pointA.segmentID == contour.MDSSegments.size()-1)
-    //                ))
-    //            {
-    //                //not adjacent segment,no need connect
-    //                continue;
-				//}
+                if(!(abs(pointA.segmentID - pointB.segmentID)==1 ||
+                    (pointA.segmentID==0 && pointB.segmentID == contour.MDSSegments.size()-1) ||
+                    (pointB.segmentID==0 && pointA.segmentID == contour.MDSSegments.size()-1)
+                    ))
+                {
+                    //not adjacent segment,no need connect
+                    continue;
+				}
 
                 if (!(pointA.isStart ^ pointB.isStart))
                 {
                     //same direction,no need connect
-                    //continue;
+                    continue;
                 }
 
                 if (contour.selectMDS[pointB.pointID].Range()==0.0f) continue;
                 const MDS& mdsB = contour.selectMDS[pointB.pointID];
                 glm::vec2 midNormalB = mdsB.GetMidNormalizedDir();
-                float dot = glm::dot(midNormalA, midNormalB);
+                //float dot = glm::dot(midNormalA, midNormalB);
                 //if (dot > 0) 
                 
                 if (mdsA.Intersects(mdsB))
@@ -686,6 +757,7 @@ void ConnectMDSSegments(MDSContours& contours)
         
         allSegmentPoints.insert(allSegmentPoints.end(), segmentPoints.begin(), segmentPoints.end());
     }
+#endif
     //return;
     //-----------------------------------------------------------------
     //outter contour connection can be added here
