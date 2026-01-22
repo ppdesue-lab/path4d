@@ -1,6 +1,7 @@
 #include "Pipe.h"   
 
 //#define SHOW_ALL_MDS
+#define SHOW_CONNECTION_SEGMENTS
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -9,6 +10,7 @@
 #include <src/canvas_ity.hpp>
 
 #include "KDTree.hpp"
+#include "meshslicer.h"
 
 #include <set>
 #include <tuple>
@@ -166,6 +168,7 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                     float y1 = posA.z * scale + offsetY;
                     float x2 = posB.x * scale + offsetX;
                     float y2 = posB.z * scale + offsetY;
+#ifdef SHOW_CONNECTION_SEGMENTS
                     context.begin_path();
                     context.move_to(x1, y1);
                     context.line_to(x2, y2);
@@ -175,6 +178,7 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
 
 
                     context.stroke();
+#endif
                 } else{
                     int start_idx = seg.ID_Start;
                     int end_idx = seg.ID_End;
@@ -212,7 +216,7 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
                     //context.set_color(canvas_ity::stroke_style,0, 1, 1, 1);
                     //context.stroke();
 
-#if 1
+#ifdef SHOW_CONNECTION_SEGMENTS
                     if(start_idx < end_idx)
                     {
                         //draw line from start_idx to end_idx
@@ -910,4 +914,118 @@ MDSContours computeMDSContours(const std::vector<std::vector<glm::vec3>>& contou
     }
 
     return contours;
+}
+
+std::vector<std::vector<glm::vec2>> Pipe::getAllConnectionSegments(const MDSContours& contours)
+{
+    std::vector<std::vector<glm::vec2>> lines;
+
+    for (const auto& contour : contours)
+    {
+        for (const auto& seg : contour.MDSSegments)
+        {
+            std::vector<glm::vec2> line_points;
+
+            if (seg.isConnected)
+            {
+                // Connected segment: from one contour's point to another contour's point
+                const glm::vec3& posA = contour.points[seg.ID_Start];
+                
+                glm::vec3 posB;
+                if (seg.otherContourID >= 0)
+                    posB = contours[seg.otherContourID].points[seg.otherPointID];
+                else
+                    posB = contour.points[seg.ID_End];
+
+                line_points.push_back(glm::vec2(posA.x, posA.z));
+                line_points.push_back(glm::vec2(posB.x, posB.z));
+            }
+            else
+            {
+                // Unconnected segment: points along the contour
+                int start_idx = seg.ID_Start;
+                int end_idx = seg.ID_End;
+
+                if (start_idx < end_idx)
+                {
+                    // Normal case: draw line from start_idx to end_idx
+                    for (int i = start_idx; i < end_idx; i++)
+                    {
+                        line_points.push_back(glm::vec2(contour.points[i].x, contour.points[i].z));
+                    }
+                    // Add the end point
+                    line_points.push_back(glm::vec2(contour.points[end_idx].x, contour.points[end_idx].z));
+                }
+                else
+                {
+                    // Circular case: split into two parts
+                    // Part 1: from start_idx to end of contour
+                    for (int i = start_idx; i < (int)contour.points.size(); i++)
+                    {
+                        line_points.push_back(glm::vec2(contour.points[i].x, contour.points[i].z));
+                    }
+                    // Part 2: from beginning to end_idx
+                    for (int i = 0; i <= end_idx; i++)
+                    {
+                        line_points.push_back(glm::vec2(contour.points[i].x, contour.points[i].z));
+                    }
+                }
+            }
+
+            if (!line_points.empty())
+            {
+                lines.push_back(line_points);
+            }
+        }
+    }
+
+    return lines;
+}
+
+std::vector<std::vector<glm::vec3>> Pipe::mergeSegmentsToContour(const MDSContours& contours)
+{
+    // Get 2D line segments from getAllConnectionSegments
+    std::vector<std::vector<glm::vec2>> segments_2d = getAllConnectionSegments(contours);
+
+    // Convert 2D segments to 3D by expanding glm::vec2(x, z) to glm::vec3(x, 0, z)
+    std::vector<std::vector<glm::vec3>> segments_3d;
+    for (const auto& segment_2d : segments_2d)
+    {
+        std::vector<glm::vec3> segment_3d;
+        for (const auto& point_2d : segment_2d)
+        {
+            // Expand 2D point to 3D: (x, z) -> (x, 0, z)
+            segment_3d.push_back(glm::vec3(point_2d.x, point_2d.y, 0.0f));
+        }
+        if (!segment_3d.empty())
+        {
+            segments_3d.push_back(segment_3d);
+        }
+    }
+
+    // Use mergeLineSegments to process the 3D segments
+    std::vector<std::vector<glm::vec3>> merged_contours = mergeLineSegments(segments_3d);
+
+    return merged_contours;
+
+}
+
+void Pipe::GenerateContoursFromMDS(const std::map<int, MDSContours>& positions_all)
+{
+    // Clear previous results
+    SavedContours.clear();
+
+    // Process each layer
+    for (const auto& [layer_id, contours] : positions_all)
+    {
+#ifndef NDEBUG
+        if (layer_id != test_idx)
+            continue;//skip bottom layer
+#endif
+        // Merge segments to contours for this layer
+        std::vector<std::vector<glm::vec3>> merged_contours = mergeSegmentsToContour(contours);
+        
+        // Save the results
+        SavedContours[layer_id] = merged_contours;
+    }
 }

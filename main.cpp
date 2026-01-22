@@ -96,15 +96,25 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx =22;// 76;//40
-    pipe.initTool(1.f, 10.0f);
+    pipe.test_idx =37;// 76;//40
+    pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
 	auto end_time = clock();
 	std::cout << "MDS calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
-    pipe.drawAndSaveCanvas(contours, pipe.test_idx);
-    system("sliced_model.png");
-    return 0;
+    //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
+    //system("sliced_model.png");
+    //return 0;
+    pipe.GenerateContoursFromMDS(contours);
+    auto savedContours = pipe.SavedContours;
+    
+    //ouput savedContours' size info
+    //for (const auto& pair : savedContours)
+    //{
+    //    std::cout << "Slice " << pair.first << ": " << pair.second.size() << " contours saved." << std::endl;
+    //}
+
+    bool hide_rawmodel = false;
 
     // Initialize GLFW
     if (!glfwInit())
@@ -142,7 +152,7 @@ int main()
     }
 
     
-    // Prepare vertex data
+    // Prepare vertex data for original slices
     std::vector<float> vertices;
     for (const auto& pair : positions_all)
     {
@@ -163,7 +173,8 @@ int main()
         }
     }
 
-    // Create VAO and VBO
+    //print vertex count
+    // Create VAO and VBO for original slices
     unsigned int VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
@@ -171,6 +182,45 @@ int main()
     glBindVertexArray(VAO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Prepare vertex data for saved contours
+    std::vector<float> savedVertices;
+    for (const auto& pair : savedContours)
+    {
+        float height_value = pair.first * 0.1f;
+        const auto& contourList = pair.second;
+        for (const auto& contour : contourList)
+        {
+            uint32_t count = contour.size();
+            for (size_t i = 0; i < count; i++)
+            {
+                savedVertices.push_back(contour[i].x);
+                savedVertices.push_back(height_value);
+                savedVertices.push_back(contour[i].y);
+                savedVertices.push_back(contour[(i + 1) % count].x);
+                savedVertices.push_back(height_value);
+                savedVertices.push_back(contour[(i + 1) % count].y);
+
+                //print xyz
+                //std::cout << "Vertex: (" << contour[i].x << ", " << contour[i].y << ", " << contour[i].z << ")" << std::endl;
+                //print line end xyz
+                //std::cout << "Line end: (" << contour[(i + 1) % count].x << ", " << contour[(i + 1) % count].y << ", " << contour[(i + 1) % count].z << ")" << std::endl;
+            }
+        }
+    }
+    //print vertex count
+    std::cout << "Saved contour vertices count: " << savedVertices.size() / 3 << std::endl;
+    // Create VAO and VBO for saved contours
+    unsigned int savedVAO, savedVBO;
+    glGenVertexArrays(1, &savedVAO);
+    glGenBuffers(1, &savedVBO);
+
+    glBindVertexArray(savedVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, savedVBO);
+    glBufferData(GL_ARRAY_BUFFER, savedVertices.size() * sizeof(float), savedVertices.data(), GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
@@ -187,10 +237,11 @@ int main()
         "}\0";
 
     const char* fragmentShaderSource = "#version 330 core\n"
+        "uniform vec3 color;\n"
         "out vec4 FragColor;\n"
         "void main()\n"
         "{\n"
-        "   FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);\n"
+        "   FragColor = vec4(color, 1.0f);\n"
         "}\n\0";
 
     // Compile vertex shader
@@ -233,6 +284,9 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
             camera.ProcessKeyboard(3, deltaTime);
 
+        if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS)
+            hide_rawmodel = !hide_rawmodel;
+
         // Render
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -248,13 +302,23 @@ int main()
         unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
         unsigned int viewLoc = glGetUniformLocation(shaderProgram, "view");
         unsigned int projLoc = glGetUniformLocation(shaderProgram, "projection");
+        unsigned int colorLoc = glGetUniformLocation(shaderProgram, "color");
 
         glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(projection));
 
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_LINES, 0, vertices.size() / 3);
+        // Draw original slices in white
+        if (!hide_rawmodel)
+        {
+            glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
+            glBindVertexArray(VAO);
+            glDrawArrays(GL_LINES, 0, vertices.size() / 3);
+        }
+        // Draw saved contours in yellow
+        glUniform3f(colorLoc, 1.0f, 1.0f, 0.0f);
+        glBindVertexArray(savedVAO);
+        glDrawArrays(GL_LINES, 0, savedVertices.size() / 3);
 
         // Swap buffers and poll events
         glfwSwapBuffers(window);
@@ -264,6 +328,8 @@ int main()
     // Cleanup
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+    glDeleteVertexArrays(1, &savedVAO);
+    glDeleteBuffers(1, &savedVBO);
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();
