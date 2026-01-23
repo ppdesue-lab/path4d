@@ -96,7 +96,7 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx =37;// 76;//40
+    pipe.test_idx =14;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
@@ -106,13 +106,15 @@ int main()
     //system("sliced_model.png");
     //return 0;
     pipe.GenerateContoursFromMDS(contours);
+    pipe.connectLayerContoursWithSafeHeight(10.0f);
     auto savedContours = pipe.SavedContours;
+    pipe.exportToGCode("output.gcode");
     
     //ouput savedContours' size info
-    //for (const auto& pair : savedContours)
-    //{
-    //    std::cout << "Slice " << pair.first << ": " << pair.second.size() << " contours saved." << std::endl;
-    //}
+    for (const auto& pair : savedContours)
+    {
+        std::cout << "Slice " << pair.first << ": " << pair.second.size() << " contours saved." << std::endl;
+    }
 
     bool hide_rawmodel = false;
 
@@ -195,14 +197,14 @@ int main()
         for (const auto& contour : contourList)
         {
             uint32_t count = contour.size();
-            for (size_t i = 0; i < count; i++)
+            for (size_t i = 0; i < count-1; i++)
             {
-                savedVertices.push_back(contour[i].x);
-                savedVertices.push_back(height_value);
-                savedVertices.push_back(contour[i].y);
-                savedVertices.push_back(contour[(i + 1) % count].x);
-                savedVertices.push_back(height_value);
-                savedVertices.push_back(contour[(i + 1) % count].y);
+                savedVertices.push_back(contour[i].Position.x);
+                savedVertices.push_back(contour[i].Position.z);// height_value);
+                savedVertices.push_back(contour[i].Position.y);
+                savedVertices.push_back(contour[(i + 1) % count].Position.x);
+                savedVertices.push_back(contour[(i + 1) % count].Position.z);// height_value);
+                savedVertices.push_back(contour[(i + 1) % count].Position.y);
 
                 //print xyz
                 //std::cout << "Vertex: (" << contour[i].x << ", " << contour[i].y << ", " << contour[i].z << ")" << std::endl;
