@@ -485,9 +485,12 @@ void Pipe::CalMDSForEachSlice(std::map<int, MDSContours>& positions_all)
                     max_idx = i;
                 }
             }
-            std::vector<MDS> filteredMDS;
-            filteredMDS.emplace_back( mdsArray[max_idx]);
-            mdsArray = filteredMDS;
+            if (max_idx >= 0)
+            {
+                std::vector<MDS> filteredMDS;
+                filteredMDS.emplace_back(mdsArray[max_idx]);
+                mdsArray = filteredMDS;
+            }
         }
 
         return mdsArray;
@@ -916,15 +919,15 @@ MDSContours computeMDSContours(const std::vector<std::vector<glm::vec3>>& contou
     return contours;
 }
 
-std::vector<std::vector<glm::vec2>> Pipe::getAllConnectionSegments(const MDSContours& contours)
+std::vector<std::vector<ContourPoint>> Pipe::getAllConnectionSegments(const MDSContours& contours)
 {
-    std::vector<std::vector<glm::vec2>> lines;
+    std::vector<std::vector<ContourPoint>> lines;
 
     for (const auto& contour : contours)
     {
         for (const auto& seg : contour.MDSSegments)
         {
-            std::vector<glm::vec2> line_points;
+            std::vector<ContourPoint> line_points;
 
             if (seg.isConnected)
             {
@@ -937,8 +940,50 @@ std::vector<std::vector<glm::vec2>> Pipe::getAllConnectionSegments(const MDSCont
                 else
                     posB = contour.points[seg.ID_End];
 
-                line_points.push_back(glm::vec2(posA.x, posA.z));
-                line_points.push_back(glm::vec2(posB.x, posB.z));
+                // Create ContourPoint for A
+                ContourPoint cpA;
+                cpA.Position = glm::vec4(posA.x, posA.y, posA.z, 1.0f);
+                if (seg.ID_Start < contour.selectMDS.size() && contour.selectMDS[seg.ID_Start].Range() > 0)
+                {
+                    glm::vec2 midNormal = contour.selectMDS[seg.ID_Start].GetMidNormalizedDir();
+                    cpA.Normal = glm::vec3(midNormal.x, 0.0f, midNormal.y);
+                }
+                else
+                {
+                    cpA.Normal = glm::vec3(0, 0, 0);
+                }
+                
+                // Create ContourPoint for B
+                ContourPoint cpB;
+                cpB.Position = glm::vec4(posB.x, posB.y, posB.z, 1.0f);
+                if (seg.otherContourID >= 0)
+                {
+                    const auto& otherContour = contours[seg.otherContourID];
+                    if (seg.otherPointID < otherContour.selectMDS.size() && otherContour.selectMDS[seg.otherPointID].Range() > 0)
+                    {
+                        glm::vec2 midNormal = otherContour.selectMDS[seg.otherPointID].GetMidNormalizedDir();
+                        cpB.Normal = glm::vec3(midNormal.x, 0.0f, midNormal.y);
+                    }
+                    else
+                    {
+                        cpB.Normal = glm::vec3(0, 0, 0);
+                    }
+                }
+                else
+                {
+                    if (seg.ID_End < contour.selectMDS.size() && contour.selectMDS[seg.ID_End].Range() > 0)
+                    {
+                        glm::vec2 midNormal = contour.selectMDS[seg.ID_End].GetMidNormalizedDir();
+                        cpB.Normal = glm::vec3(midNormal.x, 0.0f, midNormal.y);
+                    }
+                    else
+                    {
+                        cpB.Normal = glm::vec3(0, 0, 0);
+                    }
+                }
+
+                line_points.push_back(cpA);
+                line_points.push_back(cpB);
             }
             else
             {
@@ -949,12 +994,21 @@ std::vector<std::vector<glm::vec2>> Pipe::getAllConnectionSegments(const MDSCont
                 if (start_idx < end_idx)
                 {
                     // Normal case: draw line from start_idx to end_idx
-                    for (int i = start_idx; i < end_idx; i++)
+                    for (int i = start_idx; i <= end_idx; i++)
                     {
-                        line_points.push_back(glm::vec2(contour.points[i].x, contour.points[i].z));
+                        ContourPoint cp;
+                        cp.Position = glm::vec4(contour.points[i].x, contour.points[i].y, contour.points[i].z, 1.0f);
+                        if (i < contour.selectMDS.size() && contour.selectMDS[i].Range() > 0)
+                        {
+                            glm::vec2 midNormal = contour.selectMDS[i].GetMidNormalizedDir();
+                            cp.Normal = glm::vec3(midNormal.x, 0.0f, midNormal.y);
+                        }
+                        else
+                        {
+                            cp.Normal = glm::vec3(0, 0, 0);
+                        }
+                        line_points.push_back(cp);
                     }
-                    // Add the end point
-                    line_points.push_back(glm::vec2(contour.points[end_idx].x, contour.points[end_idx].z));
                 }
                 else
                 {
@@ -962,12 +1016,34 @@ std::vector<std::vector<glm::vec2>> Pipe::getAllConnectionSegments(const MDSCont
                     // Part 1: from start_idx to end of contour
                     for (int i = start_idx; i < (int)contour.points.size(); i++)
                     {
-                        line_points.push_back(glm::vec2(contour.points[i].x, contour.points[i].z));
+                        ContourPoint cp;
+                        cp.Position = glm::vec4(contour.points[i].x, contour.points[i].y, contour.points[i].z, 1.0f);
+                        if (i < contour.selectMDS.size() && contour.selectMDS[i].Range() > 0)
+                        {
+                            glm::vec2 midNormal = contour.selectMDS[i].GetMidNormalizedDir();
+                            cp.Normal = glm::vec3(midNormal.x, 0.0f, midNormal.y);
+                        }
+                        else
+                        {
+                            cp.Normal = glm::vec3(0, 0, 0);
+                        }
+                        line_points.push_back(cp);
                     }
                     // Part 2: from beginning to end_idx
                     for (int i = 0; i <= end_idx; i++)
                     {
-                        line_points.push_back(glm::vec2(contour.points[i].x, contour.points[i].z));
+                        ContourPoint cp;
+                        cp.Position = glm::vec4(contour.points[i].x, contour.points[i].y, contour.points[i].z, 1.0f);
+                        if (i < contour.selectMDS.size() && contour.selectMDS[i].Range() > 0)
+                        {
+                            glm::vec2 midNormal = contour.selectMDS[i].GetMidNormalizedDir();
+                            cp.Normal = glm::vec3(midNormal.x, 0.0f, midNormal.y);
+                        }
+                        else
+                        {
+                            cp.Normal = glm::vec3(0, 0, 0);
+                        }
+                        line_points.push_back(cp);
                     }
                 }
             }
@@ -982,32 +1058,15 @@ std::vector<std::vector<glm::vec2>> Pipe::getAllConnectionSegments(const MDSCont
     return lines;
 }
 
-std::vector<std::vector<glm::vec3>> Pipe::mergeSegmentsToContour(const MDSContours& contours)
+std::vector<std::vector<ContourPoint>> Pipe::mergeSegmentsToContour(const MDSContours& contours)
 {
-    // Get 2D line segments from getAllConnectionSegments
-    std::vector<std::vector<glm::vec2>> segments_2d = getAllConnectionSegments(contours);
+    // Get ContourPoint segments from getAllConnectionSegments
+    std::vector<std::vector<ContourPoint>> segments_cp = getAllConnectionSegments(contours);
 
-    // Convert 2D segments to 3D by expanding glm::vec2(x, z) to glm::vec3(x, 0, z)
-    std::vector<std::vector<glm::vec3>> segments_3d;
-    for (const auto& segment_2d : segments_2d)
-    {
-        std::vector<glm::vec3> segment_3d;
-        for (const auto& point_2d : segment_2d)
-        {
-            // Expand 2D point to 3D: (x, z) -> (x, 0, z)
-            segment_3d.push_back(glm::vec3(point_2d.x, point_2d.y, 0.0f));
-        }
-        if (!segment_3d.empty())
-        {
-            segments_3d.push_back(segment_3d);
-        }
-    }
+    // Use mergeLineSegments to process the ContourPoint segments
+    std::vector<std::vector<ContourPoint>> merged_contours_cp = mergeLineSegments(segments_cp);
 
-    // Use mergeLineSegments to process the 3D segments
-    std::vector<std::vector<glm::vec3>> merged_contours = mergeLineSegments(segments_3d);
-
-    return merged_contours;
-
+    return merged_contours_cp;
 }
 
 void Pipe::GenerateContoursFromMDS(const std::map<int, MDSContours>& positions_all)
@@ -1023,9 +1082,236 @@ void Pipe::GenerateContoursFromMDS(const std::map<int, MDSContours>& positions_a
             continue;//skip bottom layer
 #endif
         // Merge segments to contours for this layer
-        std::vector<std::vector<glm::vec3>> merged_contours = mergeSegmentsToContour(contours);
+        std::vector<std::vector<ContourPoint>> merged_contours = mergeSegmentsToContour(contours);
         
         // Save the results
         SavedContours[layer_id] = merged_contours;
     }
+}
+
+void Pipe::connectLayerContoursWithSafeHeight(float safeHeight)
+{
+    if (SavedContours.empty()) return;
+
+    // 1. 计算所有SavedContours的AABB
+    float minX = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    float minZ = std::numeric_limits<float>::max();
+    float maxZ = std::numeric_limits<float>::lowest();
+
+    //set height
+    for (auto& [layer_id, contours] : SavedContours) {
+        for (auto& contour : contours) {
+            for (auto& pt : contour) {
+                pt.Position.y = layer_id * 0.1f; // assuming layer height is 0.1
+            }
+        }
+    }
+
+
+
+    for (const auto& [layer_id, contours] : SavedContours) {
+
+        float height_value = layer_id * 0.1f;
+        for (const auto& contour : contours) {
+            for (const auto& pt : contour) {
+                minX = std::min(minX, pt.Position.x);
+                maxX = std::max(maxX, pt.Position.x);
+                minY = std::min(minY, pt.Position.y);
+                maxY = std::max(maxY, pt.Position.y);
+                minZ = std::min(minZ, pt.Position.z);
+                maxZ = std::max(maxZ, pt.Position.z);
+            }
+        }
+    }
+    sliceAABB.extend(glm::vec3(minX, minY, minZ));
+    sliceAABB.extend(glm::vec3(maxX, maxY, maxZ));
+
+    // 2. 计算AABB中心轴 (x, y) 方向，z轴为层高
+    float centerX = 0.5f * (minX + maxX);
+    float centerY = 0.5f * (minY + maxY);
+
+    // 3. 按z排序层号
+    std::vector<std::pair<int, float>> layer_ys;
+    for (const auto& [layer_id, contours] : SavedContours) {
+        float layer_y = 0.0f;
+        int count = 0;
+        for (const auto& contour : contours) {
+            for (const auto& pt : contour) {
+                layer_y += pt.Position.y;
+                count++;
+            }
+        }
+        if (count > 0) layer_y /= count;
+        layer_ys.emplace_back(layer_id, layer_y);
+    }
+    std::sort(layer_ys.begin(), layer_ys.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+
+    // 4. 依次连接相邻层
+    // 记录每层的代表点和中间点
+    std::vector<ContourPoint> pathPoints;
+    std::vector<std::vector<ContourPoint>> connections;
+    std::vector<ContourPoint> layerPoints; // 每层靠近轴心的点
+    std::vector<ContourPoint> safePoints;  // 每层safe点
+
+    for (size_t i = 0; i < layer_ys.size(); ++i) {
+        int layer = layer_ys[i].first;
+        const auto& contours = SavedContours[layer];
+        float minAngle = 360.0f;// std::numeric_limits<float>::max();
+        ContourPoint closest;
+        float target_angle = glm::radians(90.f);
+        for (const auto& contour : contours) {
+            for (const auto& pt : contour) {
+                glm::vec2 axis2d(centerX, centerY);
+                glm::vec2 pt2d(pt.Position.x, pt.Position.z);
+                auto diff = pt2d - axis2d;
+                //get angle
+                auto angle = atan2f(diff.y, diff.x);
+                auto angle_offest = abs(angle - target_angle);
+                if (angle_offest < minAngle) {
+                    minAngle = angle_offest;
+                    closest = pt;
+                }
+            }
+        }
+        layerPoints.push_back(closest);
+        float y = closest.Position.y;
+        glm::vec3 axis(centerX, y, centerY);
+        glm::vec3 dir = glm::normalize(glm::vec3(closest.Position) - axis);
+        glm::vec3 safe = axis + dir * safeHeight;
+        ContourPoint safePoint;
+        safePoint.Position = glm::vec4(safe,0.f);
+        safePoint.Normal = dir;
+        safePoint.isG1 = false;
+
+        safePoints.push_back(safePoint);
+    }
+
+    std::vector<ContourPoint> merged;
+    for (size_t i = 0; i < layer_ys.size(); ++i) {
+        int layer = layer_ys[i].first;
+        const auto& contours = SavedContours[layer];
+        // 找到本层代表点在第一个contour中的索引
+        int startIdx = 0;
+        if (!contours.empty() && !contours[0].empty()) {
+            float minDist = std::numeric_limits<float>::max();
+            for (size_t j = 0; j < contours[0].size(); ++j) {
+                float dist = glm::distance(glm::vec3(contours[0][j].Position), glm::vec3(layerPoints[i].Position));
+                if (dist < minDist) {
+                    minDist = dist;
+                    startIdx = (int)j;
+                }
+            }
+            // 从startIdx开始，顺序加入本层所有点
+            for (size_t j = 0; j < contours[0].size(); ++j) {
+                int idx = (startIdx + j) % contours[0].size();
+                merged.push_back(contours[0][idx]);
+            }
+        }
+        else {
+            auto tmpPt = layerPoints[i];
+            tmpPt.isG1 = false;
+            merged.push_back(tmpPt);
+        }
+        // 如果不是最后一层，插入中间连线
+        if (i + 1 < layer_ys.size()) {
+            auto tmpPt1 = layerPoints[i]; tmpPt1.isG1 = false;
+            auto tmpPt2 = layerPoints[i+1]; tmpPt2.isG1 = false;
+            merged.push_back(tmpPt1);// ContourPoint(layerPoints[i], glm::vec2(1.0f, 0.0f), false));
+            merged.push_back(safePoints[i]);// ContourPoint(safePoints[i], glm::vec2(1.0f, 0.0f), false));
+            merged.push_back(safePoints[i+1]);// ContourPoint(safePoints[i + 1], glm::vec2(1.0f, 0.0f), false));
+            merged.push_back(tmpPt2);// ContourPoint(layerPoints[i + 1], glm::vec2(1.0f, 0.0f), false));
+        }
+    }
+    // 保存到SavedContours[0]，清空其他层
+    SavedContours.clear();
+    SavedContours[0].clear();
+    SavedContours[0].push_back(merged);
+}
+// 导出4轴联动GCode，pathPoints为SavedContours[0][0]，中心轴为sliceAABB中心Z轴
+void Pipe::exportToGCode(const std::string& filename)
+{
+    if (SavedContours[0].empty() || SavedContours[0][0].empty()) 
+        return;
+    const auto& pathPoints = SavedContours[0][0];
+
+
+    // 计算AABB中心Z轴
+     //float minX = std::numeric_limits<float>::max();
+     //float maxX = std::numeric_limits<float>::lowest();
+     //float minY = std::numeric_limits<float>::max();
+     //float maxY = std::numeric_limits<float>::lowest();
+     //for (const auto& pt : pathPoints) {
+     //    minX = std::min(minX, pt.Position.x);
+     //    maxX = std::max(maxX, pt.Position.x);
+     //    minY = std::min(minY, pt.Position.y);
+     //    maxY = std::max(maxY, pt.Position.y);
+     //}
+
+    auto center = sliceAABB.getCenter();
+    float centerX = center.x;
+    float centerY = center.z;
+
+    std::ofstream fout(filename);
+    if (!fout.is_open()) return;
+
+    fout << "; 4-axis GCode generated by Pipe::exportToGCode\n";
+    fout << "G21 ; set units to mm\n";
+    fout << "G90 ; absolute positioning\n";
+    fout << "G92 X0 Y0 Z0 A0\n";
+
+    //坐标系转换，GCODE的X轴为真实数据Point的Z
+    //Point.xy代表GCODE的XZ平面
+    // std::vector<glm::vec3> pathPoints;
+    // for (const auto& pt : pathPointsInput) {
+    //     pathPoints.emplace_back(pt);
+    // }
+
+    auto cvtPoint2GCodePoint = [&](const ContourPoint& pt, const glm::vec2 center) -> glm::vec4 {
+        //Point.xy代表GCODE的切片平面
+        // GCode坐标映射：
+        // GCode X = pt.Position.y (高度方向)
+        // GCode Y = pt.Position.x
+        // GCode Z = pt.Position.z
+        // GCode A = 旋转角度（根据法向量计算）
+        
+        // 计算点在XZ平面上相对于中心的位置
+        glm::vec2 pt_xz(pt.Position.x, pt.Position.z);
+        glm::vec2 to_center = pt_xz - center;
+        
+        // 计算旋转角度A：法向量在XZ平面上的角度
+        // Normal.x 和 Normal.z 定义了刀具在XZ平面上的方向
+        glm::vec2 normal_xz(pt.Normal.x, pt.Normal.z);
+        
+        // 计算角度（相对于X轴正方向，逆时针为正）
+        float rot_angle = atan2f(normal_xz.x, normal_xz.y);
+        rot_angle = glm::degrees(rot_angle);
+        
+        glm::vec2 axis_y = normal_xz;
+        glm::vec2 axis_x = glm::vec2(axis_y.y, -axis_y.x); // 90度旋转得到垂直方向
+
+        auto proj_x = glm::dot(to_center, axis_x);
+        auto proj_y = glm::dot(to_center, axis_y);
+        
+        // 返回GCode坐标 (X=高度, Y=x坐标, Z=z坐标, A=旋转角度)
+        return glm::vec4(proj_x, pt.Position.y, proj_y, rot_angle);
+        //return glm::vec4(pt.Position.x, pt.Position.y, pt.Position.z,0);
+    };
+    // 起始点
+    const auto& first = pathPoints.front();
+    float prevA = 0.0f;
+    fout << "G0 X" << first.Position.y << " Y" << first.Position.x << " Z" << first.Position.z << " A" << first.Position.w << "\n";
+
+    for (size_t i = 0; i < pathPoints.size(); ++i) {
+        const auto& pt = pathPoints[i];
+        auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
+        
+        fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+        prevA = gcodePt.w;
+    }
+
+    fout << "M30 ; program end\n";
+    fout.close();
 }

@@ -1,4 +1,4 @@
-/*Authors: Rodrigo Minetto (UTFPR). */
+﻿/*Authors: Rodrigo Minetto (UTFPR). */
 /*         Jorge Stolfi (UNICAMP).  */
 /*rodrigo.minetto@gmail.com*/
 
@@ -832,32 +832,64 @@ void IncrementalSlicing(const std::vector<glm::vec3>& tri_pts, std::vector<float
 
 }
 
-std::vector<std::vector<glm::vec3>> mergeLineSegments(const std::vector<std::vector<glm::vec3>>& linesegments)
+std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::vector<ContourPoint>>& linesegments)
 {
 	//set input
 	std::vector<LineSegment> segs;
+	// 保存ContourPoint的映射，用于后续恢复
+	std::map<std::pair<int, int>, ContourPoint> pointMap;
+	
 	int i_idx = 0;
-	for (auto& lineseg : linesegments)
+	for (int segIdx = 0; segIdx < linesegments.size(); segIdx++)
 	{
+		auto& lineseg = linesegments[segIdx];
 		for (int i = 0; i < lineseg.size() - 1; i++)
 		{
-			LineSegment seg(lineseg[i], lineseg[i + 1], i_idx++);
+			// 使用Position的xyz进行计算
+			glm::vec3 p0(lineseg[i].Position.x, lineseg[i].Position.z, lineseg[i].Position.y);
+			glm::vec3 p1(lineseg[i + 1].Position.x, lineseg[i + 1].Position.z, lineseg[i + 1].Position.y);
+			
+			LineSegment seg(p0, p1, i_idx++);
 			segs.emplace_back(seg);
+			
+			// 保存原始ContourPoint信息
+			pointMap[{segIdx, i}] = lineseg[i];
+			pointMap[{segIdx, i + 1}] = lineseg[i + 1];
 		}
-	
 	}
 
 	//process
 	std::vector<std::vector<Contour>> polygons(1);
 	ContourConstruction(segs, polygons, 0,0.0f);
 
-	//output
-	std::vector<std::vector<glm::vec3>> outSegs;
+	//output - 将结果转换回ContourPoint
+	std::vector<std::vector<ContourPoint>> outSegs;
 	for (auto& contours : polygons)
 	{
 		for (auto& contour : contours)
 		{
-			outSegs.emplace_back(contour.points);
+			std::vector<ContourPoint> contourPoints;
+			for (auto& pt : contour.points)
+			{
+				ContourPoint cp;
+				cp.Position = glm::vec4(pt.x, pt.z, pt.y, 0);
+				
+				// 尝试从原始数据中查找最接近的点来恢复法线信息
+				float minDist = std::numeric_limits<float>::max();
+				for (auto& pair : pointMap)
+				{
+					glm::vec3 origPos(pair.second.Position.x, pair.second.Position.z, pair.second.Position.y);
+					float dist = glm::distance(pt, origPos);
+					if (dist < minDist)
+					{
+						minDist = dist;
+						cp.Normal = pair.second.Normal;
+					}
+				}
+				
+				contourPoints.push_back(cp);
+			}
+			outSegs.emplace_back(contourPoints);
 		}
 	}
 

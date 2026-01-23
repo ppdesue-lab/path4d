@@ -6,6 +6,8 @@
 #include <math.h>
 #include <iostream>
 #include <optional>
+#include "meshslicer.h"
+#include "glm-aabb/aabb.hpp"
 
 struct MDS
 {
@@ -576,9 +578,9 @@ public:
 class Pipe
 {
     
-    std::vector<std::vector<glm::vec2>> getAllConnectionSegments(const MDSContours& contours);
+    std::vector<std::vector<ContourPoint>> getAllConnectionSegments(const MDSContours& contours);
 
-    std::vector<std::vector<glm::vec3>> mergeSegmentsToContour(const MDSContours& contours);
+    std::vector<std::vector<ContourPoint>> mergeSegmentsToContour(const MDSContours& contours);
 
 public:
     Pipe() {};
@@ -595,8 +597,13 @@ public:
 
     void GenerateContoursFromMDS(const std::map<int, MDSContours>& positions_all);
     
+    void connectLayerContoursWithSafeHeight(float safeHeight);
+
+    void exportToGCode(const std::string& filename);
+
     int test_idx = 40;
     Tool tool;
 
-    std::map<int, std::vector<std::vector<glm::vec3>>> SavedContours;
+    std::map<int, std::vector<std::vector<ContourPoint>>> SavedContours;
+    glm::AABB sliceAABB;
 };
