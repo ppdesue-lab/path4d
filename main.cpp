@@ -96,7 +96,7 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx =14;// 76;//40
+    pipe.test_idx =37;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
@@ -109,12 +109,11 @@ int main()
     pipe.connectLayerContoursWithSafeHeight(10.0f);
     auto savedContours = pipe.SavedContours;
     pipe.exportToGCode("output.gcode");
-    
     //ouput savedContours' size info
-    for (const auto& pair : savedContours)
-    {
-        std::cout << "Slice " << pair.first << ": " << pair.second.size() << " contours saved." << std::endl;
-    }
+    //for (const auto& pair : savedContours)
+    //{
+    //    std::cout << "Slice " << pair.first << ": " << pair.second.size() << " contours saved." << std::endl;
+    //}
 
     bool hide_rawmodel = false;
 
@@ -197,14 +196,14 @@ int main()
         for (const auto& contour : contourList)
         {
             uint32_t count = contour.size();
-            for (size_t i = 0; i < count-1; i++)
+            for (size_t i = 0; i < count; i++)
             {
                 savedVertices.push_back(contour[i].Position.x);
-                savedVertices.push_back(contour[i].Position.z);// height_value);
-                savedVertices.push_back(contour[i].Position.y);
+                savedVertices.push_back(height_value);
+                savedVertices.push_back(contour[i].Position.z);
                 savedVertices.push_back(contour[(i + 1) % count].Position.x);
-                savedVertices.push_back(contour[(i + 1) % count].Position.z);// height_value);
-                savedVertices.push_back(contour[(i + 1) % count].Position.y);
+                savedVertices.push_back(height_value);
+                savedVertices.push_back(contour[(i + 1) % count].Position.z);
 
                 //print xyz
                 //std::cout << "Vertex: (" << contour[i].x << ", " << contour[i].y << ", " << contour[i].z << ")" << std::endl;
@@ -223,6 +222,42 @@ int main()
     glBindVertexArray(savedVAO);
     glBindBuffer(GL_ARRAY_BUFFER, savedVBO);
     glBufferData(GL_ARRAY_BUFFER, savedVertices.size() * sizeof(float), savedVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Prepare vertex data for normal vectors
+    std::vector<float> normalVertices;
+    float normalLength = 0.5f; // Length of normal vectors for visualization
+    for (const auto& pair : savedContours)
+    {
+        float height_value = pair.first * 0.1f;
+        const auto& contourList = pair.second;
+        for (const auto& contour : contourList)
+        {
+            for (size_t i = 0; i < contour.size(); i++)
+            {
+                const auto& cp = contour[i];
+                // Start point of normal
+                normalVertices.push_back(cp.Position.x);
+                normalVertices.push_back(height_value);
+                normalVertices.push_back(cp.Position.z);
+                // End point of normal (start + normal * length)
+                normalVertices.push_back(cp.Position.x + cp.Normal.x * normalLength);
+                normalVertices.push_back(height_value + cp.Normal.y * normalLength);
+                normalVertices.push_back(cp.Position.z + cp.Normal.z * normalLength);
+            }
+        }
+    }
+    std::cout << "Normal vectors count: " << normalVertices.size() / 6 << std::endl;
+    // Create VAO and VBO for normal vectors
+    unsigned int normalVAO, normalVBO;
+    glGenVertexArrays(1, &normalVAO);
+    glGenBuffers(1, &normalVBO);
+
+    glBindVertexArray(normalVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, normalVBO);
+    glBufferData(GL_ARRAY_BUFFER, normalVertices.size() * sizeof(float), normalVertices.data(), GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
@@ -322,6 +357,11 @@ int main()
         glBindVertexArray(savedVAO);
         glDrawArrays(GL_LINES, 0, savedVertices.size() / 3);
 
+        // Draw normal vectors in cyan
+        glUniform3f(colorLoc, 0.0f, 1.0f, 1.0f);
+        glBindVertexArray(normalVAO);
+        glDrawArrays(GL_LINES, 0, normalVertices.size() / 3);
+
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -332,6 +372,8 @@ int main()
     glDeleteBuffers(1, &VBO);
     glDeleteVertexArrays(1, &savedVAO);
     glDeleteBuffers(1, &savedVBO);
+    glDeleteVertexArrays(1, &normalVAO);
+    glDeleteBuffers(1, &normalVBO);
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();

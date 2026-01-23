@@ -1,4 +1,4 @@
-/*Authors: Rodrigo Minetto (UTFPR). */
+﻿/*Authors: Rodrigo Minetto (UTFPR). */
 /*         Jorge Stolfi (UNICAMP).  */
 /*rodrigo.minetto@gmail.com*/
 
@@ -175,7 +175,7 @@ struct HashV3 {
 	size_t operator() (const glm::vec3& v) const {
 		size_t h = std::hash<float>()(v.x);
 		hash_combine(h, v.y);
-		//hash_combine(h, v.z);
+		hash_combine(h, v.z);
 		return h;
 	}
 };
@@ -832,6 +832,70 @@ void IncrementalSlicing(const std::vector<glm::vec3>& tri_pts, std::vector<float
 
 }
 
+std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::vector<ContourPoint>>& linesegments)
+{
+	//set input
+	std::vector<LineSegment> segs;
+	// 保存ContourPoint的映射，用于后续恢复
+	std::map<std::pair<int, int>, ContourPoint> pointMap;
+	
+	int i_idx = 0;
+	for (int segIdx = 0; segIdx < linesegments.size(); segIdx++)
+	{
+		auto& lineseg = linesegments[segIdx];
+		for (int i = 0; i < lineseg.size() - 1; i++)
+		{
+			// 使用Position的xyz进行计算
+			glm::vec3 p0(lineseg[i].Position.x, lineseg[i].Position.z, lineseg[i].Position.y);
+			glm::vec3 p1(lineseg[i + 1].Position.x, lineseg[i + 1].Position.z, lineseg[i + 1].Position.y);
+			
+			LineSegment seg(p0, p1, i_idx++);
+			segs.emplace_back(seg);
+			
+			// 保存原始ContourPoint信息
+			pointMap[{segIdx, i}] = lineseg[i];
+			pointMap[{segIdx, i + 1}] = lineseg[i + 1];
+		}
+	}
+
+	//process
+	std::vector<std::vector<Contour>> polygons(1);
+	ContourConstruction(segs, polygons, 0,0.0f);
+
+	//output - 将结果转换回ContourPoint
+	std::vector<std::vector<ContourPoint>> outSegs;
+	for (auto& contours : polygons)
+	{
+		for (auto& contour : contours)
+		{
+			std::vector<ContourPoint> contourPoints;
+			for (auto& pt : contour.points)
+			{
+				ContourPoint cp;
+				cp.Position = glm::vec4(pt.x, pt.z, pt.y, 0);
+				
+				// 尝试从原始数据中查找最接近的点来恢复法线信息
+				float minDist = std::numeric_limits<float>::max();
+				for (auto& pair : pointMap)
+				{
+					glm::vec3 origPos(pair.second.Position.x, pair.second.Position.z, pair.second.Position.y);
+					float dist = glm::distance(pt, origPos);
+					if (dist < minDist)
+					{
+						minDist = dist;
+						cp.Normal = pair.second.Normal;
+					}
+				}
+				
+				contourPoints.push_back(cp);
+			}
+			outSegs.emplace_back(contourPoints);
+		}
+	}
+
+	return outSegs;
+}
+
 #pragma region math function
 
 
@@ -969,107 +1033,4 @@ std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const
 	}
 
 	return positions_all;
-}
-
-void ContourConstructionCustom(std::vector<LineSegment>& segs, std::vector<std::vector<Contour>>& polygons, int plane) {
-
-	bool verbose = false;
-
-	clock_t contour_begin = clock();
-
-	/*Creating the hash table.*/
-	std::vector<PointMesh> H(1);
-
-	/*Rounding vertices and filling the hash table.*/
-	double eps = 1 / 128.0;
-	for(auto i = segs.begin(); i != segs.end(); i++) {
-		LineSegment q = *i;
-		q.v[0].x = round(q.v[0].x / eps) * eps;
-		q.v[0].y = round(q.v[0].y / eps) * eps;
-		q.v[0].z = 0;
-		q.v[1].x = round(q.v[1].x / eps) * eps;
-		q.v[1].y = round(q.v[1].y / eps) * eps;
-		q.v[1].z = 0;
-		if (glm::distance(glm::vec2(q.v[0]), glm::vec2(q.v[1])) > 0.0001) {
-			(H[0][q.v[0]]).push_back(q.v[1]);
-			(H[0][q.v[1]]).push_back(q.v[0]);
-		}
-	}
-
-	/* Count vertices by degree: */
-	if (verbose) {
-		const int degmax = 10;
-		int ctdeg[degmax + 1];
-		for (int deg = 0; deg <= degmax; deg++) { ctdeg[deg] = 0; }
-		for (auto i = (H[0]).begin(); i != (H[0]).end(); i++) {
-			std::vector<glm::vec3> L = (*i).second;
-			int deg = L.size();
-			if (deg > degmax) { deg = degmax; }
-			ctdeg[deg]++;
-		}
-		assert(ctdeg[0] == 0);
-		bool closedSlice = true;
-		for (int deg = 1; deg <= degmax; deg++) {
-			if (((deg % 2) != 0) && (ctdeg[deg] > 0)) { closedSlice = false; }
-			if ((verbose || (deg != 2)) && (ctdeg[deg] != 0))
-			{
-				std::cout << "there are " << ctdeg[deg] << " vertices of degree " << deg << " on plane "<< std::endl;
-			}
-		}
-		if (!closedSlice) { std::cout << "** contours of plane "<< " are not closed" << std::endl; }
-	}
-
-	/*Contour construction.*/
-	bool maximal = true;
-	while(!(H[0]).empty()) {
-		if (maximal) {
-			std::vector<glm::vec3> P = IncrementalStartLoop(H);
-			IncrementalExtendLoop(P, H);
-			if (glm::vec2(P.front()) != glm::vec2(P.back())) { //Chain {P} is open
-				IncrementalReverseLoop(P);
-				IncrementalExtendLoop(P, H);
-			}
-			polygons[plane].push_back({ false, false, P });
-		}
-		else {
-			std::vector<glm::vec3> P = IncrementalStartLoop(H);
-			IncrementalExtendLoop(P, H);
-			polygons[plane].push_back({ false, false, P });
-		}
-	}
-	clock_t contour_end = clock();
-	loopclosure_time += double(contour_end - contour_begin) / CLOCKS_PER_SEC;
-}
-
-
-std::vector<std::vector<glm::vec3>> mergeLineSegments(const std::vector<std::vector<glm::vec3>>& linesegments)
-{
-	//set input
-	std::vector<LineSegment> segs;
-	int i_idx = 0;
-	for (auto& lineseg : linesegments)
-	{
-		for (int i = 0; i < lineseg.size() - 1; i++)
-		{
-			LineSegment seg(lineseg[i], lineseg[i + 1], i_idx++);
-			segs.emplace_back(seg);
-		}
-	
-	}
-
-	//process
-	std::vector<std::vector<Contour>> polygons(1);
-	ContourConstructionCustom(segs, polygons, 0);
-
-	//output
-	std::vector<std::vector<glm::vec3>> outSegs;
-	for (auto& contours : polygons)
-	{
-		for (auto& contour : contours)
-		{
-			outSegs.emplace_back(contour.points);
-		}
-	}
-
-	return outSegs;
 }
