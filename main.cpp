@@ -100,13 +100,14 @@ int main()
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
-	auto end_time = clock();
-	std::cout << "MDS calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
     //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     //system("sliced_model.png");
     //return 0;
     pipe.GenerateContoursFromMDS(contours);
     pipe.connectLayerContoursWithSafeHeight(10.0f);
+
+    auto end_time = clock();
+    std::cout << "calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
     auto savedContours = pipe.SavedContours;
     pipe.exportToGCode("output.gcode");
     //ouput savedContours' size info
@@ -199,10 +200,10 @@ int main()
             for (size_t i = 0; i < count; i++)
             {
                 savedVertices.push_back(contour[i].Position.x);
-                savedVertices.push_back(height_value);
+                savedVertices.push_back(contour[i].Position.y);
                 savedVertices.push_back(contour[i].Position.z);
                 savedVertices.push_back(contour[(i + 1) % count].Position.x);
-                savedVertices.push_back(height_value);
+                savedVertices.push_back(contour[(i + 1) % count].Position.y);
                 savedVertices.push_back(contour[(i + 1) % count].Position.z);
 
                 //print xyz
@@ -229,6 +230,7 @@ int main()
     // Prepare vertex data for normal vectors
     std::vector<float> normalVertices;
     float normalLength = 0.5f; // Length of normal vectors for visualization
+
     for (const auto& pair : savedContours)
     {
         float height_value = pair.first * 0.1f;
@@ -240,11 +242,11 @@ int main()
                 const auto& cp = contour[i];
                 // Start point of normal
                 normalVertices.push_back(cp.Position.x);
-                normalVertices.push_back(height_value);
+                normalVertices.push_back(cp.Position.y);
                 normalVertices.push_back(cp.Position.z);
                 // End point of normal (start + normal * length)
                 normalVertices.push_back(cp.Position.x + cp.Normal.x * normalLength);
-                normalVertices.push_back(height_value + cp.Normal.y * normalLength);
+                normalVertices.push_back(cp.Position.y + cp.Normal.y * normalLength);
                 normalVertices.push_back(cp.Position.z + cp.Normal.z * normalLength);
             }
         }
