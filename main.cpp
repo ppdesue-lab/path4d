@@ -86,7 +86,10 @@ int main()
 {
     //assert(testMDS());
     // Load model and make slices
-    auto positions_all = LoadModelAndMakeSlices("Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj", glm::vec3(0, 1, 0), 0.1f);
+    auto positions_all = LoadModelAndMakeSlices(
+        "Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
+        //"Data/test.obj",
+        glm::vec3(0, 1, 0), 0.1f);
 
     // Draw and save canvas
     Pipe pipe;
@@ -96,7 +99,7 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx =37;// 76;//40
+    pipe.test_idx =60;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
