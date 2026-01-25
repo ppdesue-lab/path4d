@@ -10,7 +10,9 @@
 #include <src/canvas_ity.hpp>
 
 #include "KDTree.hpp"
+
 #include "meshslicer.h"
+
 
 #include <set>
 #include <tuple>
@@ -1141,34 +1143,33 @@ void Pipe::connectLayerContoursWithSafeHeight(float safeHeight)
 
     // 2. 计算AABB中心轴 (x, y) 方向，z轴为层高
     float centerX = 0.5f * (minX + maxX);
-    float centerY = 0.5f * (minZ + maxZ);
+    float centerZ = 0.5f * (minZ + maxZ);
     //offset all points to center
     for (auto& [layer_id, contours] : SavedContours) {
         for (auto& contour : contours) {
             for (auto& pt : contour) {
                 pt.Position.x -= centerX;
-                pt.Position.z -= centerY;
+                pt.Position.z -= centerZ;
             }
         }
     }
     centerX = 0.0f;
-    centerY = 0.0f;
-
+    centerZ = 0.0f;
     // 3. 按z排序层号
     std::vector<std::pair<int, float>> layer_ys;
     for (const auto& [layer_id, contours] : SavedContours) {
-        float layer_y = 0.0f;
-        int count = 0;
-        for (const auto& contour : contours) {
-            for (const auto& pt : contour) {
-                layer_y += pt.Position.y;
-                count++;
-            }
-        }
-        if (count > 0) layer_y /= count;
+        float layer_y = layer_id*0.1f;
+        //int count = 0;
+        //for (const auto& contour : contours) {
+        //    for (const auto& pt : contour) {
+        //        layer_y += pt.Position.y;
+        //        count++;
+        //    }
+        //}
+        //if (count > 0) layer_y /= count;
         layer_ys.emplace_back(layer_id, layer_y);
     }
-    std::sort(layer_ys.begin(), layer_ys.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    //std::sort(layer_ys.begin(), layer_ys.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
 
     // 4. 依次连接相邻层
     // 记录每层的代表点和中间点
@@ -1180,26 +1181,25 @@ void Pipe::connectLayerContoursWithSafeHeight(float safeHeight)
     for (size_t i = 0; i < layer_ys.size(); ++i) {
         int layer = layer_ys[i].first;
         const auto& contours = SavedContours[layer];
-        float minAngle = 360.0f;// std::numeric_limits<float>::max();
+        float minAngle = -std::numeric_limits<float>::max();
         ContourPoint closest;
         float target_angle = glm::radians(90.f);
         for (const auto& contour : contours) {
             for (const auto& pt : contour) {
-                glm::vec2 axis2d(centerX, centerY);
+                glm::vec2 axis2d(centerX, centerZ);
                 glm::vec2 pt2d(pt.Position.x, pt.Position.z);
                 auto diff = pt2d - axis2d;
                 //get angle
-                auto angle = atan2f(diff.y, diff.x);
-                auto angle_offest = abs(angle - target_angle);
-                if (angle_offest < minAngle) {
-                    minAngle = angle_offest;
+                auto pos_offest = pt.Position.z;
+                if (pos_offest > minAngle) {
+                    minAngle = pos_offest;
                     closest = pt;
                 }
             }
         }
         layerPoints.push_back(closest);
         float y = closest.Position.y;
-        glm::vec3 axis(centerX, y, centerY);
+        glm::vec3 axis(centerX, y, centerZ);
         glm::vec3 dir = glm::normalize(glm::vec3(closest.Position) - axis);
         glm::vec3 safe = axis + dir * safeHeight;
         ContourPoint safePoint;
@@ -1225,7 +1225,7 @@ void Pipe::connectLayerContoursWithSafeHeight(float safeHeight)
                     startIdx = (int)j;
                 }
             }
-            #if 0
+            #if 1
             // 从startIdx开始，顺序加入本层所有点
             for (size_t j = 0; j < contours[0].size(); ++j) {
                 int idx = (startIdx + j) % contours[0].size();
@@ -1268,8 +1268,8 @@ void Pipe::exportToGCode(const std::string& filename)
 
 
     auto center = sliceAABB.getCenter();
-    float centerX = center.x;
-    float centerY = center.z;
+    float centerX = 0;// center.x;
+    float centerY = 0;// center.z;
 
     std::ofstream fout(filename);
     if (!fout.is_open()) return;
@@ -1314,24 +1314,73 @@ void Pipe::exportToGCode(const std::string& filename)
         auto proj_y = glm::dot(to_center, axis_y);
         
         // 返回GCode坐标 (X=高度, Y=x坐标, Z=z坐标, A=旋转角度)
-        //return glm::vec4(proj_x, pt.Position.y, proj_y, rot_angle);
-        
-        //直接返回，角度为0
-        return glm::vec4(to_center.x, pt.Position.y, to_center.y,0);
+        return glm::vec4(proj_x, pt.Position.y, proj_y, rot_angle);
+        //return glm::vec4(pt.Position.x, pt.Position.y, pt.Position.z,0);
     };
     // 起始点
     const auto& first = pathPoints.front();
     float prevA = 0.0f;
     fout << "G0 X" << first.Position.y << " Y" << first.Position.x << " Z" << first.Position.z << " A" << first.Position.w << "\n";
 
-    //for (size_t i = 0; i < pathPoints.size(); ++i) {
-    for (int i = pathPoints.size()-1; i >=0; i--) {
+    auto lerpContourPointByAngle = [&cvtPoint2GCodePoint](const ContourPoint& cur_pt,const ContourPoint& last_pt,const glm::vec2& centerXY) -> std::vector<glm::vec4>
+    {
+        //lerp point by angle 1degree
+        const float step = 0.1f;
+        const float angle_step = 1.0f; // degree
+        std::vector<glm::vec4> result;
+        //angle difference from last to cur
+        float angle_last = cvtPoint2GCodePoint(last_pt, centerXY).w;
+        float angle_cur = cvtPoint2GCodePoint(cur_pt, centerXY).w;
+        float angle_diff = angle_cur - angle_last;
+        if (angle_diff < -180.0f)
+            angle_diff += 360.0f;
+        else if (angle_diff > 180.0f)
+            angle_diff -= 360.0f;
+        for(int i=0;i<angle_diff;i+=angle_step)
+        {
+            float t = i / angle_diff;
+            ContourPoint interp_pt;
+            interp_pt.Position = glm::mix(last_pt.Position, cur_pt.Position, t);
+            interp_pt.Normal = glm::normalize(glm::mix(last_pt.Normal, cur_pt.Normal, t));
+            result.push_back(cvtPoint2GCodePoint(interp_pt, centerXY));
+        }
+        return result;
+    };
+    for (size_t i = 0; i < pathPoints.size(); ++i) {
+    //for (int i = pathPoints.size()-1; i >=0; i--) {
 
         const auto& pt = pathPoints[i];
-        auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
+        //if (pt.isG1)
+        if(i>0)
+        {
+            const auto& lastpt = pathPoints[i - 1];
+            //check angle difference
+            float distance = glm::distance(glm::vec3(pt.Position), glm::vec3(lastpt.Position));
+            float angle_diff = acosf(glm::dot(pt.Normal, lastpt.Normal));
+            float dist_step = distance / glm::degrees(angle_diff);
+            for(float d=0;d< distance;d+= dist_step)
+            {
+                float t = d / distance;
+                ContourPoint interp_pt;
+                interp_pt.Position = glm::mix( pathPoints[i-1].Position, pt.Position, t);
+                interp_pt.Normal = glm::normalize(glm::mix( pathPoints[i-1].Normal, pt.Normal, t));
+                auto gcodePt = cvtPoint2GCodePoint(interp_pt, glm::vec2(centerX, centerY));
+                fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+                prevA = gcodePt.w;
+            }
+            
+        }
+        // else
+        // {
+        //     //first point
+        //     auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
+        //     fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+        //     prevA = gcodePt.w;
+        // }
+        // auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
         
-        fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
-        prevA = gcodePt.w;
+        // fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+        // prevA = gcodePt.w;
     }
 
     fout << "M30 ; program end\n";

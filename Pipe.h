@@ -1,13 +1,13 @@
 #pragma once
-
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <vector>
 #include <map>
 #include <math.h>
 #include <iostream>
 #include <optional>
-#include "meshslicer.h"
 #include "glm-aabb/aabb.hpp"
+#include "slicerGLM.hpp"
 
 struct MDS
 {

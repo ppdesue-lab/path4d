@@ -44,7 +44,7 @@ class Triangle {
 
 public:
 
-	Triangle(glm::vec3 v0, glm::vec3 v1, glm::vec3 v2) {
+	Triangle(glm::f64vec3 v0, glm::f64vec3 v1, glm::f64vec3 v2) {
 		v[0] = v0;
 		v[1] = v1;
 		v[2] = v2;
@@ -84,10 +84,10 @@ public:
 
 public:
 
-	glm::vec3 v[3];
-	glm::vec3 normal;
-	float zMin;
-	float zMax;
+	glm::f64vec3 v[3];
+	glm::f64vec3 normal;
+	double zMin;
+	double zMax;
 };
 
 
@@ -172,15 +172,15 @@ template<typename T> inline void hash_combine(size_t& seed, const T& v) {
 }
 
 struct HashV3 {
-	size_t operator() (const glm::vec3& v) const {
+	size_t operator() (const glm::f64vec3& v) const {
 		size_t h = std::hash<float>()(v.x);
 		hash_combine(h, v.y);
-		hash_combine(h, v.z);
+		//hash_combine(h, v.z);
 		return h;
 	}
 };
 
-typedef std::unordered_map<glm::vec3, std::vector<glm::vec3>, HashV3> PointMesh;
+typedef std::unordered_map<glm::f64vec3, std::vector<glm::f64vec3>, HashV3> PointMesh;
 
 /*-----------------------------------------------------------------------*/
 Mesh_Triangle_List_t* Mesh_Triangle_List_create(void) {
@@ -249,34 +249,34 @@ Mesh_Triangle_Node_t* Mesh_Triangle_List_remove(Mesh_Triangle_List_t* L, Mesh_Tr
 }
 
 
-glm::vec3 R3_Mesh_Side_slice(glm::vec3 vi, glm::vec3 vj, float Z) {
+glm::f64vec3 R3_Mesh_Side_slice(glm::f64vec3 vi, glm::f64vec3 vj, double Z) {
 	double dx = vj.x - vi.x;
 	double dy = vj.y - vi.y;
 	double dz = vj.z - vi.z;
 	assert(dz != 0);
 	double frac = (Z - vi.z) / dz;
-	float xint = (float)(frac * dx + (double)vi.x);
-	float yint = (float)(frac * dy + (double)vi.y);
+	double xint = (frac * dx + (double)vi.x);
+	double yint = (frac * dy + (double)vi.y);
 	//return (glm::vec3){ .x = xint, .y = yint, .z = Z };
-	return glm::vec3(xint, yint, Z);
+	return glm::f64vec3(xint, yint, Z);
 }
 
 /*-----------------------------------------------------------------------*/
-LineSegment R3_Mesh_Triangle_slice(Mesh_Triangle_Node_t* t, float Z) {
+LineSegment R3_Mesh_Triangle_slice(Mesh_Triangle_Node_t* t, double Z) {
 	assert((t->t.zMin < Z) && (t->t.zMax > Z));
 	int np = 0; /* Number of segment endpoints found */
 	LineSegment seg;
 	for (int i = 0; i < 3; i++) {
 		/* Get side {i} of triangle: */
 		int j = (i == 2 ? 0 : i + 1);
-		glm::vec3 vi = (t->t.v[i]);
-		glm::vec3 vj = (t->t.v[j]);
+		glm::f64vec3 vi = (t->t.v[i]);
+		glm::f64vec3 vj = (t->t.v[j]);
 		/* Check for intersection of plane with {vi--vj}. */
 		/* Must consider segment closed at bottom and open at top in case {Z} goes through a vertex. */
-		float vzMin = (vi.z < vj.z ? vi.z : vj.z);
-		float vzMax = (vi.z > vj.z ? vi.z : vj.z);
+		double vzMin = (vi.z < vj.z ? vi.z : vj.z);
+		double vzMax = (vi.z > vj.z ? vi.z : vj.z);
 		if ((vzMin <= Z) && (vzMax > Z)) {
-			glm::vec3 p = R3_Mesh_Side_slice(vi, vj, Z);
+			glm::f64vec3 p = R3_Mesh_Side_slice(vi, vj, Z);
 			assert(np < 2);
 			seg.v[np] = p;
 			np++;
@@ -287,21 +287,21 @@ LineSegment R3_Mesh_Triangle_slice(Mesh_Triangle_Node_t* t, float Z) {
 }
 
 /*-----------------------------------------------------------------------*/
-LineSegment R3_Mesh_Triangle_slice(Triangle t, float Z) {
+LineSegment R3_Mesh_Triangle_slice(Triangle t, double Z) {
 	assert((t.zMin < Z) && (t.zMax > Z));
 	int np = 0; /* Number of segment endpoints found */
 	LineSegment seg;
 	for (int i = 0; i < 3; i++) {
 		/* Get side {i} of triangle: */
 		int j = (i == 2 ? 0 : i + 1);
-		glm::vec3 vi = (t.v[i]);
-		glm::vec3 vj = (t.v[j]);
+		glm::f64vec3 vi = (t.v[i]);
+		glm::f64vec3 vj = (t.v[j]);
 		/* Check for intersection of plane with {vi--vj}. */
 		/* Must consider segment closed at bottom and open at top in case {Z} goes through a vertex. */
-		float vzMin = (vi.z < vj.z ? vi.z : vj.z);
-		float vzMax = (vi.z > vj.z ? vi.z : vj.z);
+		double vzMin = (vi.z < vj.z ? vi.z : vj.z);
+		double vzMax = (vi.z > vj.z ? vi.z : vj.z);
 		if ((vzMin <= Z) && (vzMax > Z)) {
-			glm::vec3 p = R3_Mesh_Side_slice(vi, vj, Z);
+			glm::f64vec3 p = R3_Mesh_Side_slice(vi, vj, Z);
 			assert(np < 2);
 			seg.v[np] = p;
 			np++;
@@ -397,7 +397,7 @@ float xround(float x, double eps, int mod, int rem) {
 
 /*-----------------------------------------------------------------------*/
 /*Rounds {x,y,z} to an even multiple of {eps}. */
-glm::vec3 v3_round(float x, float y, float z, double eps) {
+glm::vec3 v3_round(double x, double y, double z, double eps) {
 	glm::vec3 p;
 	p.x = xround(x, eps, 2, 0);
 	p.y = xround(y, eps, 2, 0);
@@ -469,12 +469,12 @@ double slicing_time = 0.0, loopclosure_time = 0.0;
 
 /*-----------------------------------------------------------------------*/
 /*Gets an arbitrary segment from {H}, removes it from {H} and returns it as a trivial chain. */
-std::vector<glm::vec3> IncrementalStartLoop(std::vector<PointMesh>& H) {
-	std::vector<glm::vec3> P;
+std::vector<glm::f64vec3> IncrementalStartLoop(std::vector<PointMesh>& H) {
+	std::vector<glm::f64vec3> P;
 	auto it = (H[0]).begin();
-	glm::vec3 u = (*it).first;
-	std::vector<glm::vec3> vw = (*it).second;
-	glm::vec3 v = vw.at(0);
+	glm::f64vec3 u = (*it).first;
+	std::vector<glm::f64vec3> vw = (*it).second;
+	glm::f64vec3 v = vw.at(0);
 	P.push_back(u);
 	P.push_back(v);
 	(H[0][u]).erase(std::remove((H[0][u]).begin(), (H[0][u]).end(), v), (H[0][u]).end());
@@ -486,23 +486,23 @@ std::vector<glm::vec3> IncrementalStartLoop(std::vector<PointMesh>& H) {
 
 /*-----------------------------------------------------------------------*/
 /*Extends the chain {P} wih segments from {H}, removing them, while possible. */
-void IncrementalExtendLoop(std::vector<glm::vec3>& P, std::vector<PointMesh>& H) {
+void IncrementalExtendLoop(std::vector<glm::f64vec3>& P, std::vector<PointMesh>& H) {
 	int index = 0;
 	int n = P.size();
-	glm::vec3 first = P.front();
-	glm::vec3 current = P.back();
-	glm::vec3 last;
+	glm::f64vec3 first = P.front();
+	glm::f64vec3 current = P.back();
+	glm::f64vec3 last;
 
 	/* Collect other vertices: */
 	while (true) {
 		auto it = (H[0]).find(current);
 		if (it == (H[0]).end()) { /*Vertex {current} is a dead end:*/ break; }
-		glm::vec3 key1 = (*it).first; assert(key1 == current);  /*Paranoia check.*/
+		glm::f64vec3 key1 = (*it).first; assert(key1 == current);  /*Paranoia check.*/
 
 		/*Get {next}, the first unused neighbor of {current}:*/
-		std::vector<glm::vec3> vw = (*it).second; /*Unused neighbors of {current}.*/
+		std::vector<glm::f64vec3> vw = (*it).second; /*Unused neighbors of {current}.*/
 		assert(vw.size() != 0);
-		glm::vec3 next = vw.at(0); /*First unused neighbor of {current}.*/
+		glm::f64vec3 next = vw.at(0); /*First unused neighbor of {current}.*/
 
 		/*Append the segment {(current,next)} to {P} and delete from {H}:*/
 		P.push_back(next);
@@ -521,7 +521,7 @@ void IncrementalExtendLoop(std::vector<glm::vec3>& P, std::vector<PointMesh>& H)
 }
 
 /*Reverses the chain {P}.*/
-void IncrementalReverseLoop(std::vector<glm::vec3>& P) {
+void IncrementalReverseLoop(std::vector<glm::f64vec3>& P) {
 	std::reverse(P.begin(), P.end());
 }
 /*-----------------------------------------------------------------------
@@ -563,7 +563,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 		int ctdeg[degmax + 1];
 		for (int deg = 0; deg <= degmax; deg++) { ctdeg[deg] = 0; }
 		for (auto i = (H[0]).begin(); i != (H[0]).end(); i++) {
-			std::vector<glm::vec3> L = (*i).second;
+			std::vector<glm::f64vec3> L = (*i).second;
 			int deg = L.size();
 			if (deg > degmax) { deg = degmax; }
 			ctdeg[deg]++;
@@ -584,7 +584,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 	bool maximal = true;
 	while(!(H[0]).empty()) {
 		if (maximal) {
-			std::vector<glm::vec3> P = IncrementalStartLoop(H);
+			std::vector<glm::f64vec3> P = IncrementalStartLoop(H);
 			IncrementalExtendLoop(P, H);
 			if (P.front() != P.back()) { //Chain {P} is open
 				IncrementalReverseLoop(P);
@@ -593,7 +593,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 			polygons[plane].push_back({ false, false, P });
 		}
 		else {
-			std::vector<glm::vec3> P = IncrementalStartLoop(H);
+			std::vector<glm::f64vec3> P = IncrementalStartLoop(H);
 			IncrementalExtendLoop(P, H);
 			polygons[plane].push_back({ false, false, P });
 		}
@@ -716,10 +716,10 @@ void ray_casting(std::vector<Contour>& polygons) {
 	/*Creating the line segments of each contour: */
 	for (int i = 0; i < polygons.size(); i++) {
 		double area = 0.0;
-		std::vector<glm::vec3> Pi = polygons.at(i).points;
+		std::vector<glm::f64vec3> Pi = polygons.at(i).points;
 		for (int j = 1; j < Pi.size(); j++) {
-			glm::vec3 p0 = Pi.at(j - 1);
-			glm::vec3 p1 = Pi.at(j + 0);
+			glm::f64vec3 p0 = Pi.at(j - 1);
+			glm::f64vec3 p1 = Pi.at(j + 0);
 			area += (p0.x * p1.y - p0.y * p1.x);
 			add_point(p0, p1, segments, &bb, (j == 1 ? true : false), i);
 			if (j == Pi.size() - 1) {
@@ -738,7 +738,7 @@ void ray_casting(std::vector<Contour>& polygons) {
 
 	/*Using the point in polygon algorithm to test the first segment of each contour: */
 	for (int i = 0; i < polygons.size(); i++) {
-		std::vector<glm::vec3> Pi = polygons.at(i).points;
+		std::vector<glm::f64vec3> Pi = polygons.at(i).points;
 		if (contains(Pi.at(0), bb, segments, i)) {
 			/*Internal contour: */
 			polygons.at(i).external = false;
@@ -878,7 +878,7 @@ std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::
 				float minDist = std::numeric_limits<float>::max();
 				for (auto& pair : pointMap)
 				{
-					glm::vec3 origPos(pair.second.Position.x, pair.second.Position.z, pair.second.Position.y);
+					glm::f64vec3 origPos(pair.second.Position.x, pair.second.Position.z, pair.second.Position.y);
 					float dist = glm::distance(pt, origPos);
 					if (dist < minDist)
 					{
@@ -895,57 +895,6 @@ std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::
 
 	return outSegs;
 }
-
-#pragma region math function
-
-
-glm::mat3 createBasis(glm::vec3 normal)
-{
-	assert(glm::length(normal) > 0);
-
-	normal = glm::normalize(normal);
-
-	glm::vec3 tmp_x = glm::vec3(1, 0, 0);
-	if (glm::distance(tmp_x, normal) < 0.0001f)
-		tmp_x = glm::vec3(0, 1, 0);
-
-	glm::vec3 basis_y = glm::normalize(glm::cross(normal, tmp_x));
-	glm::vec3 basis_x = glm::normalize(glm::cross(basis_y, normal));
-	glm::vec3 basis_z = normal;
-
-	glm::mat3 basis(basis_x, basis_y, basis_z);
-	basis = glm::transpose(basis);
-
-	return basis;
-}
-
-std::vector<glm::vec3> transformPointsToBasis(const std::vector<glm::vec3>& points, glm::vec3 normal)
-{
-	auto transform = createBasis(normal);
-
-	std::vector<glm::vec3> t_points;
-	for (auto pt:points)
-	{
-		auto t_pt = transform * pt;
-		t_points.emplace_back(t_pt);
-	}
-	return t_points;
-}
-
-std::vector<glm::vec3> transformPointsBasisBack(const std::vector<glm::vec3>& points, glm::vec3 normal)
-{
-	auto transform = glm::inverse(createBasis(normal));
-
-	std::vector<glm::vec3> t_points;
-	for (auto pt : points)
-	{
-		auto t_pt = transform * pt;
-		t_points.emplace_back(t_pt);
-	}
-	return t_points;
-}
-
-#pragma endregion
 
 std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep)
 {
@@ -988,7 +937,7 @@ std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const
 		tri_pts_box.extend(pt);
 	}
 
-	double eps = 0.004;
+	double eps = 0.0004;
 	float delta = 0.0;
 	auto planes = compute_planes(tri_pts_box, heightstep, "false", eps, &delta);
 

@@ -5,10 +5,13 @@
 #include <vector>
 #include <string>
 #include <map>
+
+#include "MathHelper.hpp"
+
 struct Contour {
 	bool external; // not used
 	bool clockwise;// not used
-	std::vector<glm::vec3> points;
+	std::vector<glm::f64vec3> points;
 
 	void clear() { points.clear(); }
 
@@ -16,12 +19,6 @@ struct Contour {
 
 };
 
-struct ContourPoint
-{
-	glm::vec4 Position;
-	glm::vec3 Normal;
-	bool isG1 = true;
-};
 
 std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep=0.1f);
 
