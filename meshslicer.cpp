@@ -542,7 +542,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 	std::vector<PointMesh> H(1);
 
 	/*Rounding vertices and filling the hash table.*/
-	double eps = 1 / 128.0;
+	double eps = 1 / 256.0;
 	for(auto i = segs.begin(); i != segs.end(); i++) {
 		LineSegment q = *i;
 		q.v[0].x = round(q.v[0].x / eps) * eps;
@@ -551,7 +551,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 		q.v[1].x = round(q.v[1].x / eps) * eps;
 		q.v[1].y = round(q.v[1].y / eps) * eps;
 		q.v[1].z = planeZ;
-		if (glm::distance(q.v[0],q.v[1]) > 0.0001) {
+		if (glm::distance(q.v[0],q.v[1]) > 0.00002) {
 			(H[0][q.v[0]]).push_back(q.v[1]);
 			(H[0][q.v[1]]).push_back(q.v[0]);
 		}

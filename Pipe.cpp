@@ -154,10 +154,10 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
         int contour_idx = 0;
         for (const auto& contour : contours)
         {
+
 			//draw mds segments
 			for (const auto& seg : contour.MDSSegments)
 			{
-                
                 if (seg.isConnected) {
                     // Draw a line from this contour's ID_Start to other contour's otherPointID
                     const glm::vec3& posA = contour.points[seg.ID_Start];
@@ -768,7 +768,6 @@ void ConnectMDSSegments(MDSContours& contours)
         allSegmentPoints.insert(allSegmentPoints.end(), segmentPoints.begin(), segmentPoints.end());
     }
 #endif
-    //return;
     //-----------------------------------------------------------------
     //outter contour connection can be added here
     allSegmentPoints.erase(

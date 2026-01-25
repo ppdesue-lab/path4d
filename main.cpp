@@ -100,13 +100,14 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx =25;// 76;//40
+    pipe.test_idx =23;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
-    //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
-    //system("sliced_model.png");
-    //return 0;
+#ifndef NDEBUG
+    pipe.drawAndSaveCanvas(contours, pipe.test_idx);
+    system("sliced_model.png");
+#endif
     pipe.GenerateContoursFromMDS(contours);
     pipe.connectLayerContoursWithSafeHeight(10.0f);
 

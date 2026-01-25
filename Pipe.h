@@ -305,8 +305,20 @@ struct MDSContour
                 if (MDSSegments.size() && seg == MDSSegments[MDSSegments.size() - 1])
                     MDSSegments.pop_back();
 
+                //minor fix
+                // TODO:CHECK
+                //3 offset seg start point if this seg.start == lastseg.end
+                //if (MDSSegments.size())
+                //{
+                //    auto& lastseg = MDSSegments[MDSSegments.size() - 1];
+                //    if (seg.ID_Start == lastseg.ID_End)
+                //        seg.ID_Start = (seg.ID_Start + 1) % max_connect_points;
+                //}
+
                 MDSSegments.emplace_back(seg);
             }
+
+
             
         }
 
