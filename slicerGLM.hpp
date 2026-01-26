@@ -706,7 +706,8 @@ inline std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vecto
         }
     }
 
-    auto mergedContours = Slicer::ContourConstrution(segs, EPS_DEFAULT);
+    float eps = 1.0f/256.f; // 设置一个合适的精度值
+    auto mergedContours = Slicer::ContourConstrution(segs, eps);
 
     // 恢复为ContourPoint结构
     std::vector<std::vector<ContourPoint>> result;

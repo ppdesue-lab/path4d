@@ -1177,37 +1177,69 @@ void Pipe::connectLayerContoursWithSafeHeight(float safeHeight)
     std::vector<ContourPoint> layerPoints; // 每层靠近轴心的点
     std::vector<ContourPoint> safePoints;  // 每层safe点
 
+    // for (size_t i = 0; i < layer_ys.size(); ++i) {
+    //     int layer = layer_ys[i].first;
+    //     const auto& contours = SavedContours[layer];
+    //     float minAngle = -std::numeric_limits<float>::max();
+    //     ContourPoint closest;
+    //     float target_angle = glm::radians(90.f);
+    //     for (const auto& contour : contours) {
+    //         for (const auto& pt : contour) {
+    //             glm::vec2 axis2d(centerX, centerZ);
+    //             glm::vec2 pt2d(pt.Position.x, pt.Position.z);
+    //             auto diff = pt2d - axis2d;
+    //             //get angle
+    //             auto pos_offest = pt.Position.z;
+    //             if (pos_offest > minAngle) {
+    //                 minAngle = pos_offest;
+    //                 closest = pt;
+    //             }
+    //         }
+    //     }
+
     for (size_t i = 0; i < layer_ys.size(); ++i) {
         int layer = layer_ys[i].first;
         const auto& contours = SavedContours[layer];
-        float minAngle = -std::numeric_limits<float>::max();
+        std::vector<ContourPoint> potential_points;
         ContourPoint closest;
-        float target_angle = glm::radians(90.f);
-        for (const auto& contour : contours) {
-            for (const auto& pt : contour) {
-                glm::vec2 axis2d(centerX, centerZ);
-                glm::vec2 pt2d(pt.Position.x, pt.Position.z);
-                auto diff = pt2d - axis2d;
-                //get angle
-                auto pos_offest = pt.Position.z;
-                if (pos_offest > minAngle) {
-                    minAngle = pos_offest;
-                    closest = pt;
+        float min_distance_to_xaxis = std::numeric_limits<float>::max();
+        for(const auto& contour : contours) {
+            for(int i=0;i< contour.size();i++) {
+                const auto& pt = contour[i];
+                const auto& next_pt = contour[(i+1)% contour.size()];
+
+                if(pt.Normal.z > 0)
+                if (abs(pt.Position.x) < min_distance_to_xaxis)
+                {
+                    min_distance_to_xaxis = abs(pt.Position.x);
+
+                    closest = (pt);
                 }
+                
             }
         }
+        
+
         layerPoints.push_back(closest);
         float y = closest.Position.y;
         glm::vec3 axis(centerX, y, centerZ);
-        glm::vec3 dir = glm::normalize(glm::vec3(closest.Position) - axis);
+        glm::vec3 dir = closest.Normal;// glm::vec3(0,0,1);//closest.Normal;// glm::normalize(glm::vec3(closest.Position) - axis);
         glm::vec3 safe = axis + dir * safeHeight;
         ContourPoint safePoint;
         safePoint.Position = glm::vec4(safe,0.f);
         safePoint.Normal = dir;
         safePoint.isG1 = false;
 
+        
+
         safePoints.push_back(safePoint);
     }
+
+    //print safe points
+    //int idx = 0;
+    //for (const auto& pt : safePoints) {
+    //   std::cout << "Safe Point:[" << idx++ << "] (" << pt.Position.x << ", " << pt.Position.y << ", " << pt.Position.z << ")\n";
+    //}
 
     std::vector<ContourPoint> merged;
     for (size_t i = 0; i < layer_ys.size(); ++i) {
@@ -1245,7 +1277,7 @@ void Pipe::connectLayerContoursWithSafeHeight(float safeHeight)
         }
         // 如果不是最后一层，插入中间连线
         if (i + 1 < layer_ys.size()) {
-            auto tmpPt1 = layerPoints[i]; tmpPt1.isG1 = false;
+            auto tmpPt1 = layerPoints[i]; //tmpPt1.isG1 = false;
             auto tmpPt2 = layerPoints[i+1]; tmpPt2.isG1 = false;
             merged.push_back(tmpPt1);// ContourPoint(layerPoints[i], glm::vec2(1.0f, 0.0f), false));
             merged.push_back(safePoints[i]);// ContourPoint(safePoints[i], glm::vec2(1.0f, 0.0f), false));
@@ -1363,19 +1395,26 @@ void Pipe::exportToGCode(const std::string& filename)
                 ContourPoint interp_pt;
                 interp_pt.Position = glm::mix( pathPoints[i-1].Position, pt.Position, t);
                 interp_pt.Normal = glm::normalize(glm::mix( pathPoints[i-1].Normal, pt.Normal, t));
+                interp_pt.isG1 = pathPoints[i - 1].isG1;
                 auto gcodePt = cvtPoint2GCodePoint(interp_pt, glm::vec2(centerX, centerY));
-                fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+
+                if (interp_pt.isG1) fout << "G1";
+                else fout << "G0";
+                
+                fout << " X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
                 prevA = gcodePt.w;
             }
             
         }
-        // else
-        // {
-        //     //first point
-        //     auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
-        //     fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
-        //     prevA = gcodePt.w;
-        // }
+
+        //output last point
+        if(i== pathPoints.size()-1)
+        {
+            //first point
+            auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
+            fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+            prevA = gcodePt.w;
+        }
         // auto gcodePt = cvtPoint2GCodePoint(pt, glm::vec2(centerX, centerY));
         
         // fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";

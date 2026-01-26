@@ -87,7 +87,7 @@ int main()
 {
     //assert(testMDS());
     // Load model and make slices
-    auto positions_all = slicing::LoadModelAndMakeSlices(
+    auto positions_all = LoadModelAndMakeSlices(
         "Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
         //"Data/test.obj",
         glm::vec3(0, 1, 0), 0.1f);
