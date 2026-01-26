@@ -87,7 +87,7 @@ int main()
 {
     //assert(testMDS());
     // Load model and make slices
-    auto positions_all = LoadModelAndMakeSlices(
+    auto positions_all = slicing::LoadModelAndMakeSlices(
         "Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
         //"Data/test.obj",
         glm::vec3(0, 1, 0), 0.1f);
@@ -100,13 +100,13 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
-    pipe.test_idx =23;// 76;//40
+    pipe.test_idx =68;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
     pipe.CalMDSForEachSlice(contours);
 #ifndef NDEBUG
-    pipe.drawAndSaveCanvas(contours, pipe.test_idx);
-    system("sliced_model.png");
+    //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
+    //system("sliced_model.png");
 #endif
     pipe.GenerateContoursFromMDS(contours);
     pipe.connectLayerContoursWithSafeHeight(10.0f);
@@ -245,6 +245,16 @@ int main()
             for (size_t i = 0; i < contour.size(); i++)
             {
                 const auto& cp = contour[i];
+                //if (i == 286 || i== 234)
+                //{
+                //    normalVertices.push_back(cp.Position.x);
+                //    normalVertices.push_back(cp.Position.y);
+                //    normalVertices.push_back(cp.Position.z);
+                //    normalVertices.push_back(cp.Position.x - cp.Normal.x * normalLength);
+                //    normalVertices.push_back(cp.Position.y - cp.Normal.y * normalLength);
+                //    normalVertices.push_back(cp.Position.z - cp.Normal.z * normalLength);
+                //    continue;
+                //}
                 // Start point of normal
                 normalVertices.push_back(cp.Position.x);
                 normalVertices.push_back(cp.Position.y);

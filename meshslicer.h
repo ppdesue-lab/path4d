@@ -8,10 +8,32 @@
 
 #include "MathHelper.hpp"
 
+class MyPoint
+{
+public:
+	glm::f64vec3 pt;
+	glm::vec3 normal;
+
+	MyPoint() {}
+
+	double x() { return pt.x; };
+	double y() { return pt.y; };
+	double z() { return pt.z; };
+
+	bool operator==(const MyPoint& other) const
+	{
+		return pt == other.pt;
+	}
+	bool operator!=(const MyPoint& other) const
+	{
+		return pt != other.pt;
+	}
+};
+
 struct Contour {
 	bool external; // not used
 	bool clockwise;// not used
-	std::vector<glm::f64vec3> points;
+	std::vector<MyPoint> points;
 
 	void clear() { points.clear(); }
 

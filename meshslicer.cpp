@@ -121,6 +121,21 @@ public:
 		}
 	}
 
+	LineSegment(const MyPoint& p0, const MyPoint& p1, int i = 0)
+	{
+		v[0] = p0.pt;
+		v[1] = p1.pt;
+		index = i;
+		vertical = false;
+		if ((v[1].x - v[0].x) != 0) {
+			a = (v[1].y - v[0].y) / (v[1].x - v[0].x);
+			b = (v[0].y - (a * v[0].x));
+		}
+		else {
+			vertical = true;
+		}
+	}
+
 	bool operator==(const LineSegment& ls) const {
 		return ((v[0] == ls.v[0]) && (v[1] == ls.v[1]));
 	}
@@ -133,6 +148,22 @@ public:
 public:
 
 	glm::vec3 v[2];
+	glm::vec3 n[2];
+
+	MyPoint v0()
+	{
+		MyPoint p;
+		p.pt = v[0];
+		p.normal = n[0];
+		return p;
+	}
+	MyPoint v1()
+	{
+		MyPoint p;
+		p.pt = v[1];
+		p.normal = n[1];
+		return p;
+	}
 	double a;
 	double b;
 	bool vertical;
@@ -166,6 +197,9 @@ int IncrementalSlicing_binary_search(float zMin, std::vector<float> P) {
 /**************************************************************************
  *                                  HASH                                  *
  **************************************************************************/
+
+
+
 template<typename T> inline void hash_combine(size_t& seed, const T& v) {
 	std::hash<T> hasher;
 	seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
@@ -178,9 +212,17 @@ struct HashV3 {
 		//hash_combine(h, v.z);
 		return h;
 	}
+
+	size_t operator() (const MyPoint& v) const {
+		size_t h = std::hash<double>()(v.pt.x);
+		hash_combine(h, v.pt.y);
+		//hash_combine(h, v.z);
+		return h;
+	}
 };
 
-typedef std::unordered_map<glm::f64vec3, std::vector<glm::f64vec3>, HashV3> PointMesh;
+typedef std::unordered_map<glm::f64vec3, std::vector<glm::f64vec3>, HashV3> PointMeshOld;
+typedef std::unordered_map<MyPoint, std::vector<MyPoint>, HashV3> PointMesh;
 
 /*-----------------------------------------------------------------------*/
 Mesh_Triangle_List_t* Mesh_Triangle_List_create(void) {
@@ -469,12 +511,12 @@ double slicing_time = 0.0, loopclosure_time = 0.0;
 
 /*-----------------------------------------------------------------------*/
 /*Gets an arbitrary segment from {H}, removes it from {H} and returns it as a trivial chain. */
-std::vector<glm::f64vec3> IncrementalStartLoop(std::vector<PointMesh>& H) {
-	std::vector<glm::f64vec3> P;
+std::vector<MyPoint> IncrementalStartLoop(std::vector<PointMesh>& H) {
+	std::vector<MyPoint> P;
 	auto it = (H[0]).begin();
-	glm::f64vec3 u = (*it).first;
-	std::vector<glm::f64vec3> vw = (*it).second;
-	glm::f64vec3 v = vw.at(0);
+	MyPoint u = (*it).first;
+	std::vector<MyPoint> vw = (*it).second;
+	MyPoint v = vw.at(0);
 	P.push_back(u);
 	P.push_back(v);
 	(H[0][u]).erase(std::remove((H[0][u]).begin(), (H[0][u]).end(), v), (H[0][u]).end());
@@ -486,23 +528,23 @@ std::vector<glm::f64vec3> IncrementalStartLoop(std::vector<PointMesh>& H) {
 
 /*-----------------------------------------------------------------------*/
 /*Extends the chain {P} wih segments from {H}, removing them, while possible. */
-void IncrementalExtendLoop(std::vector<glm::f64vec3>& P, std::vector<PointMesh>& H) {
+void IncrementalExtendLoop(std::vector<MyPoint>& P, std::vector<PointMesh>& H) {
 	int index = 0;
 	int n = P.size();
-	glm::f64vec3 first = P.front();
-	glm::f64vec3 current = P.back();
-	glm::f64vec3 last;
+	MyPoint first = P.front();
+	MyPoint current = P.back();
+	MyPoint last;
 
 	/* Collect other vertices: */
 	while (true) {
 		auto it = (H[0]).find(current);
 		if (it == (H[0]).end()) { /*Vertex {current} is a dead end:*/ break; }
-		glm::f64vec3 key1 = (*it).first; assert(key1 == current);  /*Paranoia check.*/
+		MyPoint key1 = (*it).first; assert(key1 == current);  /*Paranoia check.*/
 
 		/*Get {next}, the first unused neighbor of {current}:*/
-		std::vector<glm::f64vec3> vw = (*it).second; /*Unused neighbors of {current}.*/
+		auto vw = (*it).second; /*Unused neighbors of {current}.*/
 		assert(vw.size() != 0);
-		glm::f64vec3 next = vw.at(0); /*First unused neighbor of {current}.*/
+		auto next = vw.at(0); /*First unused neighbor of {current}.*/
 
 		/*Append the segment {(current,next)} to {P} and delete from {H}:*/
 		P.push_back(next);
@@ -521,7 +563,7 @@ void IncrementalExtendLoop(std::vector<glm::f64vec3>& P, std::vector<PointMesh>&
 }
 
 /*Reverses the chain {P}.*/
-void IncrementalReverseLoop(std::vector<glm::f64vec3>& P) {
+void IncrementalReverseLoop(std::vector<MyPoint>& P) {
 	std::reverse(P.begin(), P.end());
 }
 /*-----------------------------------------------------------------------
@@ -542,7 +584,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 	std::vector<PointMesh> H(1);
 
 	/*Rounding vertices and filling the hash table.*/
-	double eps = 1 / 256.0;
+	double eps = 1 / 1024.0;
 	for(auto i = segs.begin(); i != segs.end(); i++) {
 		LineSegment q = *i;
 		q.v[0].x = round(q.v[0].x / eps) * eps;
@@ -552,8 +594,10 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 		q.v[1].y = round(q.v[1].y / eps) * eps;
 		q.v[1].z = planeZ;
 		if (glm::distance(q.v[0],q.v[1]) > 0.00002) {
-			(H[0][q.v[0]]).push_back(q.v[1]);
-			(H[0][q.v[1]]).push_back(q.v[0]);
+			MyPoint qv0 = q.v0();
+			MyPoint qv1 = q.v1();
+			(H[0][qv0]).push_back(qv1);
+			(H[0][qv1]).push_back(qv0);
 		}
 	}
 
@@ -563,7 +607,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 		int ctdeg[degmax + 1];
 		for (int deg = 0; deg <= degmax; deg++) { ctdeg[deg] = 0; }
 		for (auto i = (H[0]).begin(); i != (H[0]).end(); i++) {
-			std::vector<glm::f64vec3> L = (*i).second;
+			auto L = (*i).second;
 			int deg = L.size();
 			if (deg > degmax) { deg = degmax; }
 			ctdeg[deg]++;
@@ -584,7 +628,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 	bool maximal = true;
 	while(!(H[0]).empty()) {
 		if (maximal) {
-			std::vector<glm::f64vec3> P = IncrementalStartLoop(H);
+			auto P = IncrementalStartLoop(H);
 			IncrementalExtendLoop(P, H);
 			if (P.front() != P.back()) { //Chain {P} is open
 				IncrementalReverseLoop(P);
@@ -593,7 +637,7 @@ void ContourConstruction(std::vector<LineSegment>& segs, std::vector<std::vector
 			polygons[plane].push_back({ false, false, P });
 		}
 		else {
-			std::vector<glm::f64vec3> P = IncrementalStartLoop(H);
+			auto P = IncrementalStartLoop(H);
 			IncrementalExtendLoop(P, H);
 			polygons[plane].push_back({ false, false, P });
 		}
@@ -655,19 +699,19 @@ LineSegment create_ray(glm::vec3 point, bounding_box bb, int index) {
 
 
 /*-----------------------------------------------------------------------*/
-void update_bounding_box(glm::vec3 point, bounding_box* bb) {
+void update_bounding_box(const MyPoint& point, bounding_box* bb) {
 	/* Setting the bounding box: */
-	if (point.x > bb->xMax) {
-		bb->xMax = point.x;
+	if (point.pt.x > bb->xMax) {
+		bb->xMax = point.pt.x;
 	}
-	else if (point.x < bb->xMin) {
-		bb->xMin = point.x;
+	else if (point.pt.x < bb->xMin) {
+		bb->xMin = point.pt.x;
 	}
-	if (point.y > bb->yMax) {
-		bb->yMax = point.y;
+	if (point.pt.y > bb->yMax) {
+		bb->yMax = point.pt.y;
 	}
-	else if (point.y < bb->yMin) {
-		bb->yMin = point.y;
+	else if (point.pt.y < bb->yMin) {
+		bb->yMin = point.pt.y;
 	}
 }
 
@@ -697,7 +741,7 @@ bool contains(glm::vec3 point, bounding_box bb, std::vector<LineSegment> sides, 
 	return false;
 }
 /*-----------------------------------------------------------------------*/
-void add_point(glm::vec3 p1, glm::vec3 p2, std::vector<LineSegment>& t, bounding_box* bb, bool first, int index) {
+void add_point(const MyPoint& p1, const MyPoint& p2, std::vector<LineSegment>& t, bounding_box* bb, bool first, int index) {
 	if (first) {
 		update_bounding_box(p1, bb);
 	}
@@ -716,15 +760,15 @@ void ray_casting(std::vector<Contour>& polygons) {
 	/*Creating the line segments of each contour: */
 	for (int i = 0; i < polygons.size(); i++) {
 		double area = 0.0;
-		std::vector<glm::f64vec3> Pi = polygons.at(i).points;
+		auto Pi = polygons.at(i).points;
 		for (int j = 1; j < Pi.size(); j++) {
-			glm::f64vec3 p0 = Pi.at(j - 1);
-			glm::f64vec3 p1 = Pi.at(j + 0);
-			area += (p0.x * p1.y - p0.y * p1.x);
+			auto p0 = Pi.at(j - 1);
+			auto p1 = Pi.at(j + 0);
+			area += (p0.pt.x * p1.pt.y - p0.pt.y * p1.pt.x);
 			add_point(p0, p1, segments, &bb, (j == 1 ? true : false), i);
 			if (j == Pi.size() - 1) {
 				add_point(p1, Pi.at(0), segments, &bb, (j == 1 ? true : false), i);
-				area += (p1.x * Pi.at(0).y - p1.y * Pi.at(0).x);
+				area += (p1.pt.x * Pi.at(0).pt.y - p1.pt.y * Pi.at(0).pt.x);
 			}
 		}
 		area /= 2.0;
@@ -738,8 +782,8 @@ void ray_casting(std::vector<Contour>& polygons) {
 
 	/*Using the point in polygon algorithm to test the first segment of each contour: */
 	for (int i = 0; i < polygons.size(); i++) {
-		std::vector<glm::f64vec3> Pi = polygons.at(i).points;
-		if (contains(Pi.at(0), bb, segments, i)) {
+		auto Pi = polygons.at(i).points;
+		if (contains(Pi.at(0).pt, bb, segments, i)) {
 			/*Internal contour: */
 			polygons.at(i).external = false;
 		}
@@ -848,8 +892,13 @@ std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::
 			// 使用Position的xyz进行计算
 			glm::vec3 p0(lineseg[i].Position.x, lineseg[i].Position.z, lineseg[i].Position.y);
 			glm::vec3 p1(lineseg[i + 1].Position.x, lineseg[i + 1].Position.z, lineseg[i + 1].Position.y);
+
+			glm::vec3 n0(lineseg[i].Normal);
+			glm::vec3 n1(lineseg[i+1].Normal);
 			
 			LineSegment seg(p0, p1, i_idx++);
+			seg.n[0] = n0;
+			seg.n[1] = n1;
 			segs.emplace_back(seg);
 			
 			// 保存原始ContourPoint信息
@@ -871,22 +920,27 @@ std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::
 			std::vector<ContourPoint> contourPoints;
 			for (auto& pt : contour.points)
 			{
+				//ContourPoint cp;
+				//cp.Position = glm::vec4(pt.pt.x, pt.pt.y, pt.pt.z, 0);
+				//
+				//// 尝试从原始数据中查找最接近的点来恢复法线信息
+				//float minDist = std::numeric_limits<float>::max();
+				//for (auto& pair : pointMap)
+				//{
+				//	glm::f64vec3 origPos(pair.second.Position.x, pair.second.Position.z, pair.second.Position.y);
+				//	float dist = glm::distance(pt.pt, origPos);
+				//	if (dist < minDist)
+				//	{
+				//		minDist = dist;
+				//		cp.Normal = pair.second.Normal;
+				//	}
+				//}
+				//
+				//contourPoints.push_back(cp);
+
 				ContourPoint cp;
-				cp.Position = glm::vec4(pt.x, pt.z, pt.y, 0);
-				
-				// 尝试从原始数据中查找最接近的点来恢复法线信息
-				float minDist = std::numeric_limits<float>::max();
-				for (auto& pair : pointMap)
-				{
-					glm::f64vec3 origPos(pair.second.Position.x, pair.second.Position.z, pair.second.Position.y);
-					float dist = glm::distance(pt, origPos);
-					if (dist < minDist)
-					{
-						minDist = dist;
-						cp.Normal = pair.second.Normal;
-					}
-				}
-				
+				cp.Position = glm::vec4(pt.pt.x,pt.pt.z,pt.pt.y,0);
+				cp.Normal = pt.normal;
 				contourPoints.push_back(cp);
 			}
 			outSegs.emplace_back(contourPoints);
@@ -970,7 +1024,7 @@ std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const
 			std::vector<glm::vec3> positions;
 			for (int j = 0; j < contour.size(); j++)
 			{
-				positions.emplace_back(contour.points[j]);
+				positions.emplace_back(contour.points[j].pt);
 				//positions.emplace_back(contour.points[(j + 1) % contour.size()]);
 			}
 			positions = transformPointsBasisBack(positions, normal);

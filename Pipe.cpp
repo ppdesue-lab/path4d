@@ -1377,6 +1377,7 @@ void Pipe::exportToGCode(const std::string& filename)
         }
         return result;
     };
+#if 1
     for (size_t i = 0; i < pathPoints.size(); ++i) {
     //for (int i = pathPoints.size()-1; i >=0; i--) {
 
@@ -1420,7 +1421,44 @@ void Pipe::exportToGCode(const std::string& filename)
         // fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
         // prevA = gcodePt.w;
     }
+#else
+    auto cvtPoint2GCodePointDebug = [&](const ContourPoint& pt, const glm::vec2 center) -> glm::vec4 {
+        //Point.xy代表GCODE的切片平面
+        // GCode坐标映射：
+        // GCode X = pt.Position.y (高度方向)
+        // GCode Y = pt.Position.x
+        // GCode Z = pt.Position.z
+        // GCode A = 旋转角度（根据法向量计算）
 
+        // 计算点在XZ平面上相对于中心的位置
+        glm::vec2 pt_xz(pt.Position.x, pt.Position.z);
+        glm::vec2 to_center = pt_xz - center;
+
+        // 计算旋转角度A：法向量在XZ平面上的角度
+        // Normal.x 和 Normal.z 定义了刀具在XZ平面上的方向
+        glm::vec2 normal_xz(pt.Normal.x, pt.Normal.z);
+
+        // 计算角度（相对于X轴正方向，逆时针为正）
+        float rot_angle = atan2f(normal_xz.x, normal_xz.y);
+        rot_angle = glm::degrees(rot_angle);
+
+        glm::vec2 axis_y = normal_xz;
+        glm::vec2 axis_x = glm::vec2(axis_y.y, -axis_y.x); // 90度旋转得到垂直方向
+
+        auto proj_x = glm::dot(to_center, axis_x);
+        auto proj_y = glm::dot(to_center, axis_y);
+
+        // 返回GCode坐标 (X=高度, Y=x坐标, Z=z坐标, A=旋转角度)
+        return glm::vec4(proj_x, pt.Position.y, proj_y, rot_angle);
+        //return glm::vec4(pt.Position.x, pt.Position.y, pt.Position.z,0);
+        };
+    for (size_t i = 0; i < pathPoints.size(); ++i) {
+        auto pt = pathPoints[i];
+        auto gcodePt = cvtPoint2GCodePointDebug(pt, glm::vec2(centerX, centerY));
+        fout << "G1 X" << gcodePt.y << " Y" << gcodePt.x << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+        prevA = gcodePt.w;
+    }
+#endif
     fout << "M30 ; program end\n";
     fout.close();
 }
