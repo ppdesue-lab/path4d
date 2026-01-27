@@ -594,6 +594,9 @@ class Pipe
 
     std::vector<std::vector<ContourPoint>> mergeSegmentsToContour(const MDSContours& contours);
 
+    //coarse toolpath planning
+    std::map<int,std::vector<glm::vec2>> calConvexHulls2D(const std::map<int, MDSContours>& positions_all);
+    
 public:
     Pipe() {};
 
@@ -607,6 +610,8 @@ public:
 
     void CalMDSForEachSlice(std::map<int, MDSContours>& positions_all);
 
+    void CalCoarseToolpathPlanning();
+
     void GenerateContoursFromMDS(const std::map<int, MDSContours>& positions_all);
     
     void connectLayerContoursWithSafeHeight(float safeHeight);
@@ -617,5 +622,9 @@ public:
     Tool tool;
 
     std::map<int, std::vector<std::vector<ContourPoint>>> SavedContours;
+
+    std::map<int,std::vector<glm::vec3>> ConvexHullsForSlices;
+    std::map<int,std::vector<glm::vec3>> HullSideContours;
+
     glm::AABB sliceAABB;
 };

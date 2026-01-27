@@ -174,6 +174,35 @@ inline std::vector<Triangle> LoadTrianglesFromFile(const std::string& filepath,c
 		}
 	}
 
+    //offset xz to center
+    // 1. 计算所有SavedContours的AABB
+    float minX = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    float minZ = std::numeric_limits<float>::max();
+    float maxZ = std::numeric_limits<float>::lowest();
+
+
+    for (const auto& tri : tri_pts) {
+
+        minX = std::min(minX, tri.x);
+        maxX = std::max(maxX, tri.x);
+        minY = std::min(minY, tri.y);
+        maxY = std::max(maxY, tri.y);
+        minZ = std::min(minZ, tri.z);
+        maxZ = std::max(maxZ, tri.z);
+        
+    }
+    // 2. 计算AABB中心轴 (x, y) 方向，z轴为层高
+    float centerX = 0.5f * (minX + maxX);
+    float centerZ = 0.5f * (minZ + maxZ);
+    //offset all points to center
+    for (auto& tri : tri_pts) {
+        tri.x -= centerX;
+        tri.z -= centerZ;
+    }
+
 
 	//2 slice triangles
 

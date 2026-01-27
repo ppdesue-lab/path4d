@@ -88,8 +88,8 @@ int main()
     //assert(testMDS());
     // Load model and make slices
     auto positions_all = slicing::LoadModelAndMakeSlices(
-        "Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
-        //"Data/test.obj",
+        //"Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
+        "Data/test.obj",
         glm::vec3(0, 1, 0), 0.1f);
 
     // Draw and save canvas
@@ -100,10 +100,13 @@ int main()
         auto mds_contour = computeMDSContours(contour.second);
         contours.insert({ contour.first, mds_contour });
     }
+    printf("start...\n");
     pipe.test_idx =68;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
+
     pipe.CalMDSForEachSlice(contours);
+    pipe.CalCoarseToolpathPlanning();
 #ifndef NDEBUG
     //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     //system("sliced_model.png");
@@ -279,6 +282,65 @@ int main()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
+    // Prepare vertex data for Hull Side Contours
+    std::vector<float> hullVertices;
+#if 0
+    for(const auto& [id, hullContour] : pipe.ConvexHullsForSlices)
+    {
+        if (hullContour.size() < 2) continue; // Need at least 2 points for lines
+
+        // Create lines for the convex hull contour
+        for (size_t i = 0; i < hullContour.size(); i++)
+        {
+            size_t nextIndex = (i + 1) % hullContour.size();
+
+            // First point of line
+            hullVertices.push_back(hullContour[i].x);
+            hullVertices.push_back(id * 0.1f);
+            hullVertices.push_back(hullContour[i].y);
+
+            // Second point of line
+            hullVertices.push_back(hullContour[nextIndex].x);
+            hullVertices.push_back(id * 0.1f);
+            hullVertices.push_back(hullContour[nextIndex].y);
+        }
+    }
+#else
+    for (const auto& [angle, hullSideContour] : pipe.HullSideContours)
+    {
+        if (hullSideContour.size() < 2) continue; // Need at least 2 points for lines
+        
+        // Create lines for the convex hull contour
+        for (size_t i = 0; i < hullSideContour.size()-1; i++)
+        {
+            size_t nextIndex = (i + 1) % hullSideContour.size();
+            
+            // First point of line
+            hullVertices.push_back(hullSideContour[i].x);
+            hullVertices.push_back(hullSideContour[i].z*0.1);
+            hullVertices.push_back(hullSideContour[i].y);
+            
+            // Second point of line
+            hullVertices.push_back(hullSideContour[nextIndex].x);
+            hullVertices.push_back(hullSideContour[nextIndex].z*0.1f);
+            hullVertices.push_back(hullSideContour[nextIndex].y);
+        }
+    }
+#endif
+    std::cout << "Hull contour vertices count: " << hullVertices.size() / 3 << std::endl;
+    
+    // Create VAO and VBO for Hull Side Contours
+    unsigned int hullVAO, hullVBO;
+    glGenVertexArrays(1, &hullVAO);
+    glGenBuffers(1, &hullVBO);
+
+    glBindVertexArray(hullVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, hullVBO);
+    glBufferData(GL_ARRAY_BUFFER, hullVertices.size() * sizeof(float), hullVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
     // Shader sources
     const char* vertexShaderSource = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
@@ -379,6 +441,11 @@ int main()
         glBindVertexArray(normalVAO);
         glDrawArrays(GL_LINES, 0, normalVertices.size() / 3);
 
+        // Draw hull side contours in magenta
+        glUniform3f(colorLoc, 1.0f, 0.0f, 1.0f);
+        glBindVertexArray(hullVAO);
+        glDrawArrays(GL_LINES, 0, hullVertices.size() / 3);
+
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -391,6 +458,8 @@ int main()
     glDeleteBuffers(1, &savedVBO);
     glDeleteVertexArrays(1, &normalVAO);
     glDeleteBuffers(1, &normalVBO);
+    glDeleteVertexArrays(1, &hullVAO);
+    glDeleteBuffers(1, &hullVBO);
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();
