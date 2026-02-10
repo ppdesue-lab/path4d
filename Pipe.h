@@ -587,6 +587,69 @@ public:
 
 };
 
+
+class PathSegment
+{
+public:
+    std::vector<glm::vec3> SegPoints;
+    bool FastMove = false;
+
+    void Add(const glm::vec3& pt)
+    {
+        SegPoints.push_back(pt);
+    }
+
+};
+
+class SegmentLine
+{
+public:
+    std::vector<PathSegment> Segments;
+
+    SegmentLine() = default;
+
+    SegmentLine(const std::initializer_list<glm::vec3>& points)
+    {
+        Add(points);
+    }
+
+    void Add(const std::vector<glm::vec3>& pathpoints)
+    {
+        PathSegment ps;
+        ps.SegPoints = pathpoints;
+        Segments.emplace_back(ps);
+    }
+
+    
+
+    //assume all segments has only start and end point
+    //void AutoAdd(glm::vec3 pt)
+    //{
+    //    if(Segments.size() == 0)
+    //    {
+    //        PathSegment ps;
+    //        ps.SegPoints.push_back(pt);
+    //        Segments.emplace_back(ps);
+    //    }
+    //    else
+    //    {
+    //        auto& lastSeg = Segments[Segments.size() - 1];
+    //        if (lastSeg.SegPoints.size() % 2 == 1)
+    //        {
+    //            //add end point
+    //            lastSeg.SegPoints.push_back(pt);
+    //        }
+    //        else
+    //        {
+    //            //new segment
+    //            PathSegment ps;
+    //            ps.SegPoints.push_back(pt);
+    //            Segments.emplace_back(ps);
+    //        }
+    //    }
+    //}
+};
+
 class Pipe
 {
     
@@ -625,6 +688,19 @@ public:
 
     std::map<int,std::vector<glm::vec3>> ConvexHullsForSlices;
     std::map<int,std::vector<glm::vec3>> HullSideContours;
+    
+    // RoughPaths存储从HullSideContours到径向半径R的插补路径
+    // 外层map的key是角度(0-359), 内层vector是从外到内的插补线条
+    std::map<int, std::vector<SegmentLine>> RoughPaths;
+    
+    // 生成粗加工路径：从HullSideContours的每条线向内插补到半径R，间隔StepOver
+    void GenerateRoughPath(float R = 10.0f, float StepOver = 1.0f);
+    
+    // 连接后的完整粗加工路径 (所有角度的线段连接成一个整体)
+    SegmentLine ConnectedRoughPath;
+    
+    // 导出粗加工路径为GCode
+    void ExportRoughPathGCode(const std::string& filename);
 
     glm::AABB sliceAABB;
 };

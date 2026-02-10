@@ -117,16 +117,16 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
 #endif
                     if(mds.Range()>0)
                     {
-                        float startRad = glm::radians(mds.start);
-                        float endRad = glm::radians(mds.end);
-                        context.addFan(
-                            x3,
-                            y3,
-                            8.0f, // radius
-                            startRad,
-                            endRad,
-                            true
-                        );
+                        //float startRad = glm::radians(mds.start);
+                        //float endRad = glm::radians(mds.end);
+                        //context.addFan(
+                        //    x3,
+                        //    y3,
+                        //    8.0f, // radius
+                        //    startRad,
+                        //    endRad,
+                        //    true
+                        //);
 
                     }
                 }
@@ -336,14 +336,14 @@ void Pipe::drawAndSaveCanvas(const std::map<int, MDSContours>& positions_all, in
 
         context.line_to(x1 - prepDistance.x, y1 - prepDistance.z);
         context.line_to(x2 - prepDistance.x, y2 - prepDistance.z);
-        context.addFan(
-                    x1,
-                    y1,
-                    scaled_radius, // radius
-                    0.0f,
-                    2.0f * 3.14159265f,
-            true
-                );
+        //context.addFan(
+        //            x1,
+        //            y1,
+        //            scaled_radius, // radius
+        //            0.0f,
+        //            2.0f * 3.14159265f,
+        //    true
+        //        );
 
 
 
@@ -1546,11 +1546,13 @@ void Pipe::CalCoarseToolpathPlanning()
 
         return false; // No intersection
     };
+    
 
     HullSideContours.clear();
     for (int i = 0; i < 360; i++)
     {
 #pragma region test intersection between convex hull with ray 
+
 
         Line ray;
         ray.start = glm::vec2(0.0f, 0.0f);
@@ -1588,4 +1590,303 @@ void Pipe::CalCoarseToolpathPlanning()
 #pragma endregion
 
     }
+}
+
+void Pipe::GenerateRoughPath(float R, float StepOver)
+{
+    RoughPaths.clear();
+    
+    // 遍历每个角度的HullSideContour
+    for (const auto& [angle, contourA] : HullSideContours)
+    {
+        if (contourA.empty()) continue;
+        
+
+        std::vector<SegmentLine> interpolatedContours;
+        
+        // 生成径向半径为R的线条B (与contourA在同一角度方向)
+        // contourA中的点格式是(x, y, layer_index)，其中(x,y)是2D坐标
+        float angleRad = glm::radians(static_cast<float>(angle));
+        glm::vec2 radialDir(cos(angleRad), sin(angleRad));
+        
+        // 线条B: 在半径R处的垂直线，z坐标(layer)与contourA相同
+        std::vector<glm::vec3> contourB;
+        for (const auto& pt : contourA)
+        {
+            // 在该角度方向上，距离原点R的点
+            glm::vec2 posB = radialDir * R;
+            contourB.emplace_back(posB.x, posB.y, pt.z);
+        }
+        
+        // 从contourA开始，向contourB插补
+        // 计算每个对应点之间的径向距离
+        // 对于每个点，从A到B的径向距离可能不同，我们按StepOver插补
+        
+        // 首先添加原始轮廓B
+        auto toplinesegment = { contourB.front(),contourB.back() };
+        interpolatedContours.emplace_back(toplinesegment);
+        
+        // 计算需要插补的最大步数（使用第一个点的距离作为参考）
+        if (!contourA.empty())
+        {
+            // 找到从A到B的最大径向距离
+            float maxRadialDist = 0.0f;
+            for (size_t i = 0; i < contourA.size(); ++i)
+            {
+                glm::vec2 posA(contourA[i].x, contourA[i].y);
+                glm::vec2 posB(contourB[i].x, contourB[i].y);
+                float dist = glm::length(posB) - glm::length(posA); // A到中心的距离 - B到中心的距离
+                if (dist > maxRadialDist)
+                {
+                    maxRadialDist = dist;
+                }
+            }
+            
+            // 从A向B(向内)插补，每隔StepOver一条线
+            int numSteps = static_cast<int>(maxRadialDist / StepOver);
+            
+            for (int step = 1; step <= numSteps; ++step)
+            {
+                std::vector<glm::vec3> interpolatedLine;
+                float stepOffset = step * StepOver;
+                
+                bool lineSegStart = false;
+                for (size_t i = 0; i < contourA.size(); ++i)
+                {
+                    glm::vec2 posA(contourA[i].x, contourA[i].y);
+                    float distA = glm::length(posA);
+
+                    glm::vec2 posB(contourB[i].x, contourB[i].y);
+                    float distB = glm::length(posB);
+
+                    
+                    // 计算新的径向距离：从B向内移动stepOffset
+                    float newDist = distB - stepOffset;
+                    
+                    bool isThisPointValid = newDist > distA;
+                    if (isThisPointValid)
+                    {
+                        //add new segment start point
+                        glm::vec2 newPos = radialDir * newDist;
+                        interpolatedLine.emplace_back(newPos.x, newPos.y, contourA[i].z);
+
+
+                    }
+                    else
+                    {
+                        //push segments
+                        if (!interpolatedLine.empty())
+                        {
+                            auto linesegment = { interpolatedLine.front(),interpolatedLine.back() };
+                            interpolatedContours.emplace_back(linesegment);
+                            interpolatedLine.clear();
+                        }
+
+                        continue;
+
+                    }
+                    
+                }
+                if (!interpolatedLine.empty())
+                {
+                    auto linesegment = { interpolatedLine.front(),interpolatedLine.back() };
+                    interpolatedContours.emplace_back(linesegment);
+                    interpolatedLine.clear();
+                }
+                
+            }
+        }
+        
+        RoughPaths[angle] = interpolatedContours;
+    }
+
+    //connect all rough paths to single path
+    ConnectedRoughPath = SegmentLine();
+    
+    // Step 1: 找出所有角度中最大的SegmentLine数量
+    size_t maxSegmentCount = 0;
+    for (const auto& [angle, segmentLines] : RoughPaths)
+    {
+        if (segmentLines.size() > maxSegmentCount)
+        {
+            maxSegmentCount = segmentLines.size();
+        }
+    }
+    
+    // Step 2: 按照id（索引）把不同角度的同一id的SegmentLine连接起来
+    // RoughPaths[0][id], RoughPaths[1][id], ..., RoughPaths[359][id] → 组成一个SegmentLine
+    std::vector<SegmentLine> mergedSegmentLines; // 按id排列的合并后的SegmentLines
+    
+    for (size_t id = 0; id < maxSegmentCount; ++id)
+    {
+        SegmentLine mergedLine;
+        
+        // 遍历所有角度 (0-359)
+        for (int angle = 0; angle < 360; ++angle)
+        {
+            auto it = RoughPaths.find(angle);
+            if (it == RoughPaths.end()) continue;
+            
+            const auto& segmentLines = it->second;
+            if (id >= segmentLines.size()) continue;
+            
+            // 把该角度下id索引的SegmentLine的所有Segments加入mergedLine
+            const SegmentLine& segLine = segmentLines[id];
+            for (const auto& seg : segLine.Segments)
+            {
+                mergedLine.Segments.push_back(seg);
+            }
+        }
+        
+        if (!mergedLine.Segments.empty())
+        {
+            mergedSegmentLines.push_back(mergedLine);
+        }
+    }
+    
+    // Step 3: 把所有mergedSegmentLines按顺序合并成一个巨大的SegmentLine
+    // 并添加通过ContourB的连接
+    
+    for (size_t i = 0; i < mergedSegmentLines.size(); ++i)
+    {
+        const SegmentLine& currentSegLine = mergedSegmentLines[i];
+        
+        // 把当前SegmentLine的所有Segments加入ConnectedRoughPath
+        for (const auto& seg : currentSegLine.Segments)
+        {
+            ConnectedRoughPath.Segments.push_back(seg);
+        }
+        
+        // 如果不是最后一个SegmentLine，添加连接到下一个SegmentLine
+        if (i + 1 < mergedSegmentLines.size())
+        {
+            const SegmentLine& nextSegLine = mergedSegmentLines[i + 1];
+            
+            // 获取当前SegmentLine最后一个点
+            if (!currentSegLine.Segments.empty() && 
+                !currentSegLine.Segments.back().SegPoints.empty() &&
+                !nextSegLine.Segments.empty() &&
+                !nextSegLine.Segments.front().SegPoints.empty())
+            {
+                glm::vec3 lastPt = currentSegLine.Segments.back().SegPoints.back();
+                glm::vec3 firstPt = nextSegLine.Segments.front().SegPoints.front();
+                
+                // 计算lastPt和firstPt在ContourB上的对应点
+                // ContourB是在半径R处的点，保持同样的角度
+                
+                // lastPt对应的角度
+                float lastAngle = atan2(lastPt.y, lastPt.x);
+                glm::vec2 lastRadialDir(cos(lastAngle), sin(lastAngle));
+                glm::vec3 lastPtOnB(lastRadialDir.x * R, lastRadialDir.y * R, lastPt.z);
+                
+                // firstPt对应的角度
+                float firstAngle = atan2(firstPt.y, firstPt.x);
+                glm::vec2 firstRadialDir(cos(firstAngle), sin(firstAngle));
+                glm::vec3 firstPtOnB(firstRadialDir.x * R, firstRadialDir.y * R, firstPt.z);
+                
+                // 创建连接路径: lastPt -> lastPtOnB -> firstPtOnB -> firstPt
+                PathSegment connectionSeg;
+                connectionSeg.SegPoints.push_back(lastPt);
+                connectionSeg.SegPoints.push_back(lastPtOnB);
+                connectionSeg.SegPoints.push_back(firstPtOnB);
+                connectionSeg.SegPoints.push_back(firstPt);
+                connectionSeg.FastMove = true; // 连接段为快速移动
+                
+                ConnectedRoughPath.Segments.push_back(connectionSeg);
+            }
+        }
+    }
+}
+
+void Pipe::ExportRoughPathGCode(const std::string& filename)
+{
+    if (ConnectedRoughPath.Segments.empty())
+    {
+        std::cerr << "ExportRoughPathGCode: ConnectedRoughPath is empty!" << std::endl;
+        return;
+    }
+    
+    std::ofstream fout(filename);
+    if (!fout.is_open())
+    {
+        std::cerr << "ExportRoughPathGCode: Failed to open file " << filename << std::endl;
+        return;
+    }
+    
+    fout << std::fixed << std::setprecision(4);
+    
+    // GCode 头部
+    fout << "; 4-axis RoughPath GCode generated by Pipe::ExportRoughPathGCode\n";
+    fout << "G21 ; set units to mm\n";
+    fout << "G90 ; absolute positioning\n";
+    fout << "G92 X0 Y0 Z10 A0\n";
+    
+    // 坐标转换: 
+    // 数据中的点格式为 (x, y, layer_index)，其中 (x,y) 是2D平面坐标
+    // GCode坐标:
+    //   GCode X = layer * 0.1 (高度方向，层索引转换为实际高度)
+    //   GCode Y = pt.x
+    //   GCode Z = pt.y
+    //   GCode A = 旋转角度 (根据点在XY平面上的角度计算)
+    
+    auto cvtToGCode = [](const glm::vec3& pt) -> glm::vec4 {
+        // pt.x, pt.y 是2D坐标，pt.z 是层索引
+        float height = pt.z * 0.1f;  // 层索引转实际高度
+        
+        // 计算旋转角度 A: 点在XY平面上的角度
+        float angle = atan2(pt.y, pt.x);
+        float angleDeg = glm::degrees(angle);
+        
+        // 计算径向距离
+        float radius = glm::length(glm::vec2(pt.x, pt.y));
+        
+        // GCode坐标: X=高度, Y=0(中心线), Z=径向距离, A=角度
+        // 这里假设工件在A轴上旋转，刀具沿Z轴进给
+        return glm::vec4(height, 0.0f, radius, angleDeg);
+    };
+    
+    float prevA = 0.0f;
+    bool firstPoint = true;
+    
+    for (const auto& segment : ConnectedRoughPath.Segments)
+    {
+        if (segment.SegPoints.empty()) continue;
+        
+        // 判断是快速移动还是切削移动
+        bool isFastMove = segment.FastMove;
+        std::string moveCmd = isFastMove ? "G0" : "G1";
+        
+        for (size_t i = 0; i < segment.SegPoints.size(); ++i)
+        {
+            const auto& pt = segment.SegPoints[i];
+            auto gcodePt = cvtToGCode(pt);
+            
+            // 处理角度跳变 (避免A轴旋转超过必要范围)
+            float deltaA = gcodePt.w - prevA;
+            if (deltaA > 180.0f)
+                gcodePt.w -= 360.0f;
+            else if (deltaA < -180.0f)
+                gcodePt.w += 360.0f;
+            
+            // 第一个点使用快速定位
+            if (firstPoint)
+            {
+                fout << "G0 X" << gcodePt.x << " Y" << gcodePt.y 
+                     << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+                firstPoint = false;
+            }
+            else
+            {
+                fout << moveCmd << " X" << gcodePt.x << " Y" << gcodePt.y 
+                     << " Z" << gcodePt.z << " A" << gcodePt.w << "\n";
+            }
+            
+            prevA = gcodePt.w;
+        }
+    }
+    
+    fout << "M30 ; program end\n";
+    fout.close();
+    
+    std::cout << "ExportRoughPathGCode: Successfully exported to " << filename << std::endl;
 }

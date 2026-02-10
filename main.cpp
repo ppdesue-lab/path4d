@@ -34,6 +34,7 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
+
 void mouse_callback(GLFWwindow* window, double xpos, double ypos)
 {
     if (firstMouse)
@@ -58,6 +59,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset)
 }
 
 
+
 bool testMDS()
 {
     MDS mds1(0.0f, 30.0f);
@@ -80,6 +82,7 @@ bool testMDS()
         return false;
     auto range3 = mds5.IntersectsRange(mds6);
     
+    
 
     return true;
 }
@@ -101,12 +104,13 @@ int main()
         contours.insert({ contour.first, mds_contour });
     }
     printf("start...\n");
-    pipe.test_idx =68;// 76;//40
+    pipe.test_idx =23;// 76;//40
     pipe.initTool(0.4f, 10.0f);
 	auto start_time = clock();
 
     pipe.CalMDSForEachSlice(contours);
     pipe.CalCoarseToolpathPlanning();
+    pipe.GenerateRoughPath(5.0f, 0.5f); // 生成粗加工路径
 #ifndef NDEBUG
     //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     //system("sliced_model.png");
@@ -118,6 +122,7 @@ int main()
     std::cout << "calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
     auto savedContours = pipe.SavedContours;
     pipe.exportToGCode("output.gcode");
+    pipe.ExportRoughPathGCode("out_rough.gcode");
     //ouput savedContours' size info
     //for (const auto& pair : savedContours)
     //{
@@ -132,6 +137,7 @@ int main()
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
     }
+    
 
     // Set GLFW options
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -325,6 +331,7 @@ int main()
             hullVertices.push_back(hullSideContour[nextIndex].z*0.1f);
             hullVertices.push_back(hullSideContour[nextIndex].y);
         }
+
     }
 #endif
     std::cout << "Hull contour vertices count: " << hullVertices.size() / 3 << std::endl;
@@ -337,6 +344,41 @@ int main()
     glBindVertexArray(hullVAO);
     glBindBuffer(GL_ARRAY_BUFFER, hullVBO);
     glBufferData(GL_ARRAY_BUFFER, hullVertices.size() * sizeof(float), hullVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // Prepare vertex data for Rough Paths (interpolated contours)
+    int idx = 0;
+    std::vector<float> roughPathVertices;
+    for (const auto& [angle, paths] : pipe.RoughPaths)
+    {
+
+        for (const auto& path : paths)
+        {
+            for(const auto& pathsegment : path.Segments)
+            {
+                roughPathVertices.push_back(pathsegment.SegPoints[0].x);
+                roughPathVertices.push_back(pathsegment.SegPoints[0].z * 0.1f);  // z is layer index
+                roughPathVertices.push_back(pathsegment.SegPoints[0].y);
+                roughPathVertices.push_back(pathsegment.SegPoints[1].x);
+                roughPathVertices.push_back(pathsegment.SegPoints[1].z * 0.1f);
+                roughPathVertices.push_back(pathsegment.SegPoints[1].y);
+            }
+        }
+
+    }
+    
+    std::cout << "Rough path vertices count: " << roughPathVertices.size() / 3 << std::endl;
+    
+    // Create VAO and VBO for Rough Paths
+    unsigned int roughVAO, roughVBO;
+    glGenVertexArrays(1, &roughVAO);
+    glGenBuffers(1, &roughVBO);
+
+    glBindVertexArray(roughVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, roughVBO);
+    glBufferData(GL_ARRAY_BUFFER, roughPathVertices.size() * sizeof(float), roughPathVertices.data(), GL_STATIC_DRAW);
 
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
@@ -446,6 +488,11 @@ int main()
         glBindVertexArray(hullVAO);
         glDrawArrays(GL_LINES, 0, hullVertices.size() / 3);
 
+        // Draw rough paths in blue
+        glUniform3f(colorLoc, 0.0f, 1.0f, 1.0f);
+        glBindVertexArray(roughVAO);
+        glDrawArrays(GL_LINES, 0, roughPathVertices.size() / 3);
+
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -460,6 +507,8 @@ int main()
     glDeleteBuffers(1, &normalVBO);
     glDeleteVertexArrays(1, &hullVAO);
     glDeleteBuffers(1, &hullVBO);
+    glDeleteVertexArrays(1, &roughVAO);
+    glDeleteBuffers(1, &roughVBO);
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();
