@@ -42,7 +42,7 @@ struct Contour {
 };
 
 
-std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep=0.1f);
+extern std::map<int, std::vector<std::vector<glm::vec3>> > LoadModelAndMakeSlices(const std::string& filepath,const glm::vec3& normal,float heightstep=0.1f);
 
 
 extern std::vector<std::vector<ContourPoint>> mergeLineSegments(const std::vector<std::vector<ContourPoint>>& linesegments);

@@ -68,12 +68,15 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 
 
+#inlclude clipper2
+add_subdirectory(clipper2 clipper2)
+
 
 file(GLOB src_files *.cpp)
 
 add_executable(${projname} ${src_files} "glm-aabb/aabb.cpp")
 target_compile_definitions(${projname} PUBLIC APP_ROOT_PATH=\"${CMAKE_CURRENT_SOURCE_DIR}\")
 
-target_link_libraries(${projname} assimp::assimp glfw glad)
+target_link_libraries(${projname} assimp::assimp glfw glad Clipper2)
 
 target_include_directories(${projname} PRIVATE D:/gitclones/Hazel/Hazel/vendor/glm ${canvas_ity_SOURCE_DIR} ${stb_SOURCE_DIR})

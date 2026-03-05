@@ -11,6 +11,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include "meshslicer.h"
+#include "RoughPath.h"
 #include "slicerGLM.hpp"
 #include "FPSCamera.h"
 #include "Pipe.h"
@@ -91,9 +92,17 @@ int main()
     //assert(testMDS());
     // Load model and make slices
     auto positions_all = slicing::LoadModelAndMakeSlices(
-        //"Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
-        "Data/test.obj",
+        "Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
+        //"Data/test.obj",
         glm::vec3(0, 1, 0), 0.1f);
+
+#pragma region test rough path
+    RoughPathRotate roughpath;
+    roughpath.cursclice_contours = positions_all[23];
+    roughpath.Test();
+
+    return 0;
+#pragma endregion
 
     // Draw and save canvas
     Pipe pipe;
@@ -110,13 +119,13 @@ int main()
 
     pipe.CalMDSForEachSlice(contours);
     pipe.CalCoarseToolpathPlanning();
-    pipe.GenerateRoughPath(5.0f, 0.5f); // 生成粗加工路径
+    //pipe.GenerateRoughPath(5.0f, 0.5f); // 生成粗加工路径
 #ifndef NDEBUG
     //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     //system("sliced_model.png");
 #endif
     pipe.GenerateContoursFromMDS(contours);
-    pipe.connectLayerContoursWithSafeHeight(10.0f);
+    pipe.connectLayerContoursWithSafeHeight(3.0f);
 
     auto end_time = clock();
     std::cout << "calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
