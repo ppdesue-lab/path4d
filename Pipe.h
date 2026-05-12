@@ -680,6 +680,8 @@ public:
     void connectLayerContoursWithSafeHeight(float safeHeight);
 
     void exportToGCode(const std::string& filename);
+    void exportGCodeNoAngle(const std::string& filename);
+    void exportGCodeWithAngle(const std::string& filename);
 
     int test_idx = 40;
     Tool tool;

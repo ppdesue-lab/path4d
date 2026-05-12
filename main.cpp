@@ -109,8 +109,8 @@ int main()
 	auto start_time = clock();
 
     pipe.CalMDSForEachSlice(contours);
-    pipe.CalCoarseToolpathPlanning();
-    pipe.GenerateRoughPath(5.0f, 0.5f); // 生成粗加工路径
+    //pipe.CalCoarseToolpathPlanning();
+    //pipe.GenerateRoughPath(5.0f, 0.5f); // 生成粗加工路径
 #ifndef NDEBUG
     //pipe.drawAndSaveCanvas(contours, pipe.test_idx);
     //system("sliced_model.png");
@@ -121,8 +121,10 @@ int main()
     auto end_time = clock();
     std::cout << "calculation time: " << (end_time - start_time) / (float)CLOCKS_PER_SEC << " seconds." << std::endl;
     auto savedContours = pipe.SavedContours;
-    pipe.exportToGCode("output.gcode");
-    pipe.ExportRoughPathGCode("out_rough.gcode");
+    //pipe.exportToGCode("output.gcode");
+    pipe.exportGCodeNoAngle("finegcode_noangle.nc");
+    pipe.exportGCodeWithAngle("finegcode_withangle.nc");
+    //pipe.ExportRoughPathGCode("out_rough.gcode");
     //ouput savedContours' size info
     //for (const auto& pair : savedContours)
     //{
