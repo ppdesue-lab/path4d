@@ -650,6 +650,41 @@ public:
     //}
 };
 
+struct RoughRenderPath
+{
+    std::vector<glm::vec3> Points;
+    bool FastMove = false;
+    float RotaryAngleDeg = 0.0f;
+    float PassRadius = 0.0f;
+    int PassIndex = 0;
+};
+
+struct RoughRotarySetup
+{
+    float AngleDeg = 0.0f;
+    std::vector<RoughRenderPath> CutPaths;
+    std::vector<RoughRenderPath> LinkPaths;
+    float EstimatedSeconds = 0.0f;
+};
+
+struct RoughRenderPlan
+{
+    std::vector<RoughRenderPath> CutPaths;
+    std::vector<RoughRenderPath> LinkPaths;
+    std::vector<RoughRotarySetup> IndexedSetups;
+    float EstimatedSeconds = 0.0f;
+    float SafeRadius = 0.0f;
+
+    void Clear()
+    {
+        CutPaths.clear();
+        LinkPaths.clear();
+        IndexedSetups.clear();
+        EstimatedSeconds = 0.0f;
+        SafeRadius = 0.0f;
+    }
+};
+
 class Pipe
 {
     
@@ -697,6 +732,12 @@ public:
     
     // 生成粗加工路径：从HullSideContours的每条线向内插补到半径R，间隔StepOver
     void GenerateRoughPath(float R = 10.0f, float StepOver = 1.0f);
+
+    RoughRenderPlan RoughRenderPlanData;
+    void GenerateRoughRenderPlan(float stockRadius = 10.0f, float stepOver = 0.5f, float safeRadius = 12.0f, float indexAngleStep = 1.0f);
+    std::vector<float> BuildRoughRenderPlanVertices(bool includeLinks = true) const;
+    float EstimateRoughMachineTime(float feedMmPerMin = 600.0f, float rapidMmPerMin = 2000.0f, float rotaryDegPerMin = 1800.0f) const;
+    void exportGCodeRough(const std::string& filename) const;
     
     // 连接后的完整粗加工路径 (所有角度的线段连接成一个整体)
     SegmentLine ConnectedRoughPath;

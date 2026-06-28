@@ -17,6 +17,7 @@
 
 #include <set>
 #include <tuple>
+#include <algorithm>
 
 #include <fstream>
 #include <iomanip>
@@ -1740,6 +1741,384 @@ void Pipe::CalCoarseToolpathPlanning()
 #pragma endregion
 
     }
+}
+
+void Pipe::GenerateRoughRenderPlan(float stockRadius, float stepOver, float safeRadius, float indexAngleStep)
+{
+    RoughRenderPlanData.Clear();
+    if (SavedContours.empty() || stockRadius <= 0.0f || stepOver <= 0.0f || indexAngleStep <= 0.0f)
+        return;
+    RoughRenderPlanData.SafeRadius = safeRadius;
+
+    float minX = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float minZ = std::numeric_limits<float>::max();
+    float maxZ = std::numeric_limits<float>::lowest();
+    bool hasPoint = false;
+
+    for (const auto& [layer, contourList] : SavedContours)
+    {
+        for (const auto& contour : contourList)
+        {
+            for (const auto& pt : contour)
+            {
+                minX = std::min(minX, pt.Position.x);
+                maxX = std::max(maxX, pt.Position.x);
+                minZ = std::min(minZ, pt.Position.z);
+                maxZ = std::max(maxZ, pt.Position.z);
+                hasPoint = true;
+            }
+        }
+    }
+    if (!hasPoint)
+        return;
+
+    const glm::vec2 center(0.5f * (minX + maxX), 0.5f * (minZ + maxZ));
+    auto localPosition = [&center](const ContourPoint& pt) -> glm::vec2 {
+        return glm::vec2(pt.Position.x, pt.Position.z) - center;
+    };
+    auto angleDelta = [](float a, float b) -> float {
+        float delta = fmodf(a - b + 540.0f, 360.0f) - 180.0f;
+        return fabsf(delta);
+    };
+
+    std::vector<int> layers;
+    layers.reserve(SavedContours.size());
+    for (const auto& [layer, contourList] : SavedContours)
+        layers.push_back(layer);
+    std::sort(layers.begin(), layers.end());
+
+    const float angularSpacing = std::max(tool.radius * 0.5f, 1e-3f);
+    const float angleFromToolAtStock = glm::degrees(2.0f * asinf(std::min(1.0f, angularSpacing / (2.0f * stockRadius))));
+    const float baseAngleStep = std::max(indexAngleStep, angleFromToolAtStock);
+    const float halfWindow = std::max(baseAngleStep * 0.55f, 0.5f);
+    const int setupCount = std::max(1, static_cast<int>(ceilf(360.0f / baseAngleStep)));
+    const float actualAngleStep = 360.0f / static_cast<float>(setupCount);
+
+    for (int setupId = 0; setupId < setupCount; ++setupId)
+    {
+        float setupAngle = setupId * actualAngleStep;
+        float angleRad = glm::radians(setupAngle);
+        glm::vec2 radialDir(cosf(angleRad), sinf(angleRad));
+
+        std::vector<std::pair<float, float>> layerSurfaceRadius;
+        layerSurfaceRadius.reserve(layers.size());
+        float minSurfaceRadius = stockRadius;
+
+        for (int layer : layers)
+        {
+            auto it = SavedContours.find(layer);
+            if (it == SavedContours.end())
+                continue;
+
+            float bestRadius = -1.0f;
+            for (const auto& contour : it->second)
+            {
+                for (const auto& pt : contour)
+                {
+                    glm::vec2 local = localPosition(pt);
+                    float radius = glm::length(local);
+                    if (radius < 1e-6f)
+                        continue;
+
+                    float ptAngle = glm::degrees(atan2f(local.y, local.x));
+                    if (ptAngle < 0.0f)
+                        ptAngle += 360.0f;
+                    if (angleDelta(ptAngle, setupAngle) <= halfWindow)
+                        bestRadius = std::max(bestRadius, radius);
+                }
+            }
+
+            if (bestRadius >= 0.0f)
+            {
+                float clampedRadius = std::min(bestRadius, stockRadius);
+                layerSurfaceRadius.emplace_back(layer * 0.1f, clampedRadius);
+                minSurfaceRadius = std::min(minSurfaceRadius, clampedRadius);
+            }
+        }
+
+        if (layerSurfaceRadius.size() < 2 || minSurfaceRadius >= stockRadius)
+            continue;
+
+        RoughRotarySetup setup;
+        setup.AngleDeg = setupAngle;
+
+        int passIndex = 0;
+        for (float passRadius = stockRadius; passRadius > minSurfaceRadius; passRadius -= stepOver, ++passIndex)
+        {
+            std::vector<glm::vec3> currentPath;
+            for (const auto& [layerHeight, surfaceRadius] : layerSurfaceRadius)
+            {
+                if (passRadius + 1e-4f >= surfaceRadius)
+                {
+                    glm::vec2 passPos = radialDir * passRadius;
+                    currentPath.emplace_back(passPos.x, layerHeight, passPos.y);
+                }
+                else if (currentPath.size() >= 2)
+                {
+                    RoughRenderPath path;
+                    path.Points = currentPath;
+                    path.FastMove = false;
+                    path.RotaryAngleDeg = setupAngle;
+                    path.PassRadius = passRadius;
+                    path.PassIndex = passIndex;
+                    setup.CutPaths.push_back(path);
+                    currentPath.clear();
+                }
+                else
+                {
+                    currentPath.clear();
+                }
+            }
+
+            if (currentPath.size() >= 2)
+            {
+                RoughRenderPath path;
+                path.Points = currentPath;
+                path.FastMove = false;
+                path.RotaryAngleDeg = setupAngle;
+                path.PassRadius = passRadius;
+                path.PassIndex = passIndex;
+                setup.CutPaths.push_back(path);
+            }
+        }
+
+        for (size_t i = 1; i < setup.CutPaths.size(); ++i)
+        {
+            const auto& lastPath = setup.CutPaths[i - 1];
+            const auto& nextPath = setup.CutPaths[i];
+            if (lastPath.Points.empty() || nextPath.Points.empty())
+                continue;
+
+            RoughRenderPath link;
+            link.FastMove = true;
+            link.RotaryAngleDeg = setupAngle;
+            link.PassIndex = nextPath.PassIndex;
+            link.PassRadius = nextPath.PassRadius;
+            glm::vec3 last = lastPath.Points.back();
+            glm::vec3 next = nextPath.Points.front();
+            link.Points.push_back(last);
+            link.Points.emplace_back(radialDir.x * safeRadius, last.y, radialDir.y * safeRadius);
+            link.Points.emplace_back(radialDir.x * safeRadius, next.y, radialDir.y * safeRadius);
+            link.Points.push_back(next);
+            setup.LinkPaths.push_back(link);
+        }
+
+        if (!setup.CutPaths.empty())
+            RoughRenderPlanData.IndexedSetups.push_back(setup);
+    }
+
+    int maxPassIndex = -1;
+    for (const auto& setup : RoughRenderPlanData.IndexedSetups)
+    {
+        for (const auto& path : setup.CutPaths)
+            maxPassIndex = std::max(maxPassIndex, path.PassIndex);
+    }
+
+    RoughRenderPath* previousPath = nullptr;
+    for (int passIndex = 0; passIndex <= maxPassIndex; ++passIndex)
+    {
+        float passRadius = stockRadius - passIndex * stepOver;
+        float chordAtPass = 2.0f * passRadius * sinf(glm::radians(actualAngleStep) * 0.5f);
+        int setupStride = 1;
+        if (chordAtPass > 1e-6f)
+            setupStride = std::max(1, static_cast<int>(ceilf(angularSpacing / chordAtPass)));
+
+        const bool reverseAngleOrder = (passIndex % 2) == 1;
+        const size_t setupCountInPlan = RoughRenderPlanData.IndexedSetups.size();
+        for (size_t orderId = 0; orderId < setupCountInPlan; ++orderId)
+        {
+            if (orderId % static_cast<size_t>(setupStride) != 0)
+                continue;
+
+            size_t setupIndex = reverseAngleOrder ? (setupCountInPlan - 1 - orderId) : orderId;
+            const auto& setup = RoughRenderPlanData.IndexedSetups[setupIndex];
+
+            for (const auto& sourcePath : setup.CutPaths)
+            {
+                if (sourcePath.PassIndex != passIndex)
+                    continue;
+
+                RoughRenderPath path = sourcePath;
+                if (previousPath && !previousPath->Points.empty() && path.Points.size() > 1)
+                {
+                    float forwardDist = glm::distance(previousPath->Points.back(), path.Points.front());
+                    float reverseDist = glm::distance(previousPath->Points.back(), path.Points.back());
+                    if (reverseDist < forwardDist)
+                        std::reverse(path.Points.begin(), path.Points.end());
+
+                    glm::vec3 from = previousPath->Points.back();
+                    glm::vec3 to = path.Points.front();
+                    float fromAngleRad = glm::radians(previousPath->RotaryAngleDeg);
+                    float toAngleRad = glm::radians(path.RotaryAngleDeg);
+                    glm::vec2 fromDir(cosf(fromAngleRad), sinf(fromAngleRad));
+                    glm::vec2 toDir(cosf(toAngleRad), sinf(toAngleRad));
+
+                    RoughRenderPath link;
+                    link.FastMove = true;
+                    link.RotaryAngleDeg = path.RotaryAngleDeg;
+                    link.PassRadius = path.PassRadius;
+                    link.PassIndex = path.PassIndex;
+                    link.Points.push_back(from);
+                    link.Points.emplace_back(fromDir.x * safeRadius, from.y, fromDir.y * safeRadius);
+                    link.Points.emplace_back(toDir.x * safeRadius, to.y, toDir.y * safeRadius);
+                    link.Points.push_back(to);
+                    RoughRenderPlanData.LinkPaths.push_back(link);
+                }
+
+                RoughRenderPlanData.CutPaths.push_back(path);
+                previousPath = &RoughRenderPlanData.CutPaths.back();
+            }
+        }
+    }
+
+    RoughRenderPlanData.EstimatedSeconds = EstimateRoughMachineTime();
+}
+
+std::vector<float> Pipe::BuildRoughRenderPlanVertices(bool includeLinks) const
+{
+    std::vector<float> vertices;
+    auto appendPath = [&vertices](const RoughRenderPath& path)
+    {
+        if (path.Points.size() < 2)
+            return;
+
+        for (size_t i = 1; i < path.Points.size(); ++i)
+        {
+            const glm::vec3& a = path.Points[i - 1];
+            const glm::vec3& b = path.Points[i];
+            vertices.push_back(a.x);
+            vertices.push_back(a.y);
+            vertices.push_back(a.z);
+            vertices.push_back(b.x);
+            vertices.push_back(b.y);
+            vertices.push_back(b.z);
+        }
+    };
+
+    for (const auto& path : RoughRenderPlanData.CutPaths)
+        appendPath(path);
+    if (includeLinks)
+    {
+        for (const auto& path : RoughRenderPlanData.LinkPaths)
+            appendPath(path);
+    }
+
+    return vertices;
+}
+
+float Pipe::EstimateRoughMachineTime(float feedMmPerMin, float rapidMmPerMin, float rotaryDegPerMin) const
+{
+    if (feedMmPerMin <= 0.0f || rapidMmPerMin <= 0.0f || rotaryDegPerMin <= 0.0f)
+        return 0.0f;
+
+    auto pathLength = [](const RoughRenderPath& path) -> float
+    {
+        float length = 0.0f;
+        for (size_t i = 1; i < path.Points.size(); ++i)
+            length += glm::distance(path.Points[i - 1], path.Points[i]);
+        return length;
+    };
+
+    float seconds = 0.0f;
+    for (size_t i = 0; i < RoughRenderPlanData.CutPaths.size(); ++i)
+    {
+        const auto& path = RoughRenderPlanData.CutPaths[i];
+        seconds += pathLength(path) / feedMmPerMin * 60.0f;
+
+        if (i + 1 < RoughRenderPlanData.CutPaths.size() && !path.Points.empty())
+        {
+            const auto& nextPath = RoughRenderPlanData.CutPaths[i + 1];
+            if (nextPath.Points.empty())
+                continue;
+
+            float currentA = path.RotaryAngleDeg;
+            float nextA = unwrapAngle(nextPath.RotaryAngleDeg, currentA);
+            seconds += fabsf(nextA - currentA) / rotaryDegPerMin * 60.0f;
+            if (i < RoughRenderPlanData.LinkPaths.size())
+                seconds += pathLength(RoughRenderPlanData.LinkPaths[i]) / rapidMmPerMin * 60.0f;
+            else
+                seconds += glm::distance(path.Points.back(), nextPath.Points.front()) / rapidMmPerMin * 60.0f;
+        }
+    }
+
+    return seconds;
+}
+
+void Pipe::exportGCodeRough(const std::string& filename) const
+{
+    if (RoughRenderPlanData.CutPaths.empty())
+    {
+        std::cerr << "exportGCodeRough: RoughRenderPlanData.CutPaths is empty!" << std::endl;
+        return;
+    }
+
+    std::ofstream fout(filename);
+    if (!fout.is_open())
+    {
+        std::cerr << "exportGCodeRough: Failed to open file " << filename << std::endl;
+        return;
+    }
+
+    auto cvtRoughPointToGCode = [](const glm::vec3& pt, float angleDeg) -> glm::vec4
+    {
+        float radius = glm::length(glm::vec2(pt.x, pt.z));
+        return glm::vec4(pt.y, 0.0f, radius, angleDeg);
+    };
+
+    auto writePath = [&](const RoughRenderPath& path, float setupA, bool forceRapid, bool& firstPoint, float& prevA)
+    {
+        if (path.Points.empty())
+            return;
+
+        const char* moveCmd = (forceRapid || path.FastMove) ? "G0" : "G1";
+        for (const auto& pt : path.Points)
+        {
+            glm::vec4 gcodePt = cvtRoughPointToGCode(pt, setupA);
+
+            fout << (firstPoint ? "G0" : moveCmd)
+                 << " X" << gcodePt.x
+                 << " Y" << gcodePt.y
+                 << " Z" << gcodePt.z
+                 << " A" << gcodePt.w << "\n";
+
+            prevA = gcodePt.w;
+            firstPoint = false;
+        }
+    };
+
+    fout << std::fixed << std::setprecision(4);
+    writeGCodeHeader(fout, "Pipe::exportGCodeRough", true);
+
+    bool firstPoint = true;
+    float prevA = 0.0f;
+
+    for (size_t pathIndex = 0; pathIndex < RoughRenderPlanData.CutPaths.size(); ++pathIndex)
+    {
+        const RoughRenderPath& path = RoughRenderPlanData.CutPaths[pathIndex];
+        if (path.Points.empty())
+            continue;
+
+        float pathA = firstPoint ? path.RotaryAngleDeg : unwrapAngle(path.RotaryAngleDeg, prevA);
+        if (!firstPoint)
+        {
+            const glm::vec3& lastPt = RoughRenderPlanData.CutPaths[pathIndex - 1].Points.back();
+            const glm::vec3& nextPt = path.Points.front();
+            float lastRadius = glm::length(glm::vec2(lastPt.x, lastPt.z));
+            float nextRadius = glm::length(glm::vec2(nextPt.x, nextPt.z));
+            float retractRadius = std::max(RoughRenderPlanData.SafeRadius, std::max(lastRadius, nextRadius));
+
+            fout << "G0 X" << lastPt.y << " Y0.0000 Z" << retractRadius << " A" << prevA << "\n";
+            fout << "G0 X" << nextPt.y << " Y0.0000 Z" << retractRadius << " A" << pathA << "\n";
+            fout << "G0 X" << nextPt.y << " Y0.0000 Z" << nextRadius << " A" << pathA << "\n";
+            prevA = pathA;
+        }
+
+        writePath(path, pathA, false, firstPoint, prevA);
+    }
+
+    fout << "M30 ; program end\n";
+    std::cout << "exportGCodeRough: Successfully exported to " << filename << std::endl;
 }
 
 void Pipe::GenerateRoughPath(float R, float StepOver)

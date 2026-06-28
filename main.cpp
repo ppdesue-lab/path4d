@@ -91,8 +91,8 @@ int main()
     //assert(testMDS());
     // Load model and make slices
     auto positions_all = slicing::LoadModelAndMakeSlices(
-        //"Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
-        "Data/test.obj",
+        "Data/15252_Key_Ring_Wall_Mount_Hand_v1.obj",
+        //"Data/test.obj",
         glm::vec3(0, 1, 0), 0.1f);
 
     // Draw and save canvas
@@ -116,6 +116,8 @@ int main()
     //system("sliced_model.png");
 #endif
     pipe.GenerateContoursFromMDS(contours);
+    pipe.GenerateRoughRenderPlan(10.0f, 0.5f, 12.0f, 1.0f);
+    std::cout << "rough estimated time: " << pipe.EstimateRoughMachineTime() << " seconds." << std::endl;
     pipe.connectLayerContoursWithSafeHeight(10.0f);
 
     auto end_time = clock();
@@ -124,6 +126,7 @@ int main()
     //pipe.exportToGCode("output.gcode");
     pipe.exportGCodeNoAngle("finegcode_noangle.nc");
     pipe.exportGCodeWithAngle("finegcode_withangle.nc");
+    pipe.exportGCodeRough("roughgcode.nc");
     //pipe.ExportRoughPathGCode("out_rough.gcode");
     //ouput savedContours' size info
     //for (const auto& pair : savedContours)
@@ -385,6 +388,20 @@ int main()
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(0);
 
+    std::vector<float> roughRenderPlanVertices = pipe.BuildRoughRenderPlanVertices(true);
+    std::cout << "Rough render plan vertices count: " << roughRenderPlanVertices.size() / 3 << std::endl;
+
+    unsigned int roughPlanVAO, roughPlanVBO;
+    glGenVertexArrays(1, &roughPlanVAO);
+    glGenBuffers(1, &roughPlanVBO);
+
+    glBindVertexArray(roughPlanVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, roughPlanVBO);
+    glBufferData(GL_ARRAY_BUFFER, roughRenderPlanVertices.size() * sizeof(float), roughRenderPlanVertices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
     // Shader sources
     const char* vertexShaderSource = "#version 330 core\n"
         "layout (location = 0) in vec3 aPos;\n"
@@ -495,6 +512,11 @@ int main()
         glBindVertexArray(roughVAO);
         glDrawArrays(GL_LINES, 0, roughPathVertices.size() / 3);
 
+        // Draw independent rough render plan in orange
+        glUniform3f(colorLoc, 1.0f, 0.45f, 0.05f);
+        glBindVertexArray(roughPlanVAO);
+        glDrawArrays(GL_LINES, 0, roughRenderPlanVertices.size() / 3);
+
         // Swap buffers and poll events
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -511,6 +533,8 @@ int main()
     glDeleteBuffers(1, &hullVBO);
     glDeleteVertexArrays(1, &roughVAO);
     glDeleteBuffers(1, &roughVBO);
+    glDeleteVertexArrays(1, &roughPlanVAO);
+    glDeleteBuffers(1, &roughPlanVBO);
     glDeleteProgram(shaderProgram);
 
     glfwTerminate();
